@@ -5,7 +5,7 @@ umask 077
 readonly REPO="bobvhfhh/singbox-lite-smallmem"
 branch="main"
 install_dir="/usr/local/lib/singbox-lite-smallmem"
-bin_path="/usr/local/bin/sb-lite"
+bin_path="/usr/local/bin/sb"
 readonly FILES=(singbox.sh xray_manager.sh advanced_relay.sh parser.sh install.sh)
 readonly RUNTIME_FILES=(singbox.sh xray_manager.sh advanced_relay.sh parser.sh)
 
@@ -21,7 +21,7 @@ Options:
   --source DIR       Install from a local checkout instead of GitHub
   --branch NAME      GitHub branch to install (default: main)
   --install-dir DIR  Script installation directory
-  --bin PATH         Launcher path (default: /usr/local/bin/sb-lite)
+  --bin PATH         Launcher path (default: /usr/local/bin/sb)
   -h, --help         Show this help
 EOF
 }
@@ -32,6 +32,7 @@ stage_dir=""
 installed_files=()
 launcher_installed=0
 committed=0
+install_only=0
 cleanup() { [[ -z "${temp_source_dir:-}" ]] || rm -rf -- "$temp_source_dir"; }
 
 finish() {
@@ -83,6 +84,10 @@ while (($#)); do
             bin_path="$2"
             shift 2
             ;;
+        --install-only)
+            install_only=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -101,7 +106,10 @@ if [[ -n "$source_dir" ]]; then
         [[ -s "${source_dir}/${file}" ]] || { error "missing source file: ${source_dir}/${file}"; exit 1; }
     done
 else
-    command -v curl >/dev/null 2>&1 || { error "curl is required for online installation"; exit 1; }
+    command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || {
+        error "curl or wget is required for online installation"
+        exit 1
+    }
     command -v bash >/dev/null 2>&1 || { error "bash is required"; exit 1; }
     command -v mktemp >/dev/null 2>&1 || { error "mktemp is required"; exit 1; }
 
@@ -109,8 +117,14 @@ else
     temp_source_dir="$source_dir"
     info "downloading ${REPO}@${branch}"
     for file in "${FILES[@]}"; do
-        if ! curl --fail --location --silent \
-            "https://raw.githubusercontent.com/${REPO}/${branch}/${file}" -o "${source_dir}/${file}"; then
+        download_url="https://raw.githubusercontent.com/${REPO}/${branch}/${file}"
+        if command -v curl >/dev/null 2>&1; then
+            curl --fail --location --silent \
+                "$download_url" -o "${source_dir}/${file}" 2>/dev/null || rm -f -- "${source_dir}/${file}"
+        else
+            wget -q "$download_url" -O "${source_dir}/${file}" || rm -f -- "${source_dir}/${file}"
+        fi
+        if [[ ! -s "${source_dir}/${file}" ]]; then
             if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1 \
                 || ! gh api "repos/${REPO}/contents/${file}?ref=${branch}" --jq .content \
                     | tr -d '\n' | base64 -d > "${source_dir}/${file}"; then
@@ -131,8 +145,10 @@ done
 
 if [[ "${EUID}" -ne 0 ]]; then
     command -v sudo >/dev/null 2>&1 || { error "sudo is required to install into ${install_dir}"; exit 1; }
-    sudo bash "${source_dir}/install.sh" --source "$source_dir" --install-dir "$install_dir" --bin "$bin_path"
-    exit $?
+    sudo bash "${source_dir}/install.sh" --source "$source_dir" --install-dir "$install_dir" --bin "$bin_path" --install-only
+    install_rc=$?
+    [[ "$install_rc" -eq 0 ]] || exit "$install_rc"
+    exec sudo "$bin_path"
 fi
 
 install -d -m 0755 "$install_dir" "$(dirname -- "$bin_path")"
@@ -167,4 +183,9 @@ committed=1
 
 info "installed scripts to ${install_dir}"
 info "launcher: ${bin_path}"
-info "run with: sudo sb-lite"
+rm -rf -- "$stage_dir"
+stage_dir=""
+if [[ "$install_only" -eq 1 ]]; then
+    exit 0
+fi
+exec "$bin_path"

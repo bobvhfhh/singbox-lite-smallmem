@@ -11,40 +11,34 @@
 
 ## 一键安装
 
-安装器需要 `bash`、`gh`、`base64` 和 `sudo`。服务器上的 GitHub CLI 账号需能读取此私有仓库，令牌至少带有 `repo` 读取权限。安装器先下载并检查 Bash 语法，再调用 `sudo` 安装到 `/usr/local/lib/singbox-lite-smallmem`，并创建 `/usr/local/bin/sb-lite` 启动命令。脚本首次运行时会按原项目流程安装系统依赖；需要创建节点时，再从菜单安装对应核心。安装器只替换脚本，不改动 `/usr/local/etc/sing-box/` 或 `/usr/local/etc/xray/` 中的现有配置。
+安装器会检查四个脚本，通过 `sudo` 安装到 `/usr/local/lib/singbox-lite-smallmem`，创建原项目同名的 `/usr/local/bin/sb` 命令，然后只打开一次管理菜单。现有配置继续保留在 `/usr/local/etc/sing-box/` 和 `/usr/local/etc/xray/`。
 
-目前仓库为私有。服务器需要安装 GitHub CLI (`gh`)，并先登录：
+仓库目前是私有的。服务器先安装 GitHub CLI (`gh`)，登录有仓库读取权限的账号：
 
 ```bash
 gh auth login -h github.com
 ```
 
-登录后用这一条命令安装；安装器会用已登录的 `gh` 下载私有文件，并在写入系统目录时调用 `sudo`：
+登录后安装或更新只需这一行，执行后会直接进入管理菜单：
 
 ```bash
-gh api 'repos/bobvhfhh/singbox-lite-smallmem/contents/install.sh?ref=main' --jq .content | tr -d '\n' | base64 -d | bash
+set -o pipefail; gh api 'repos/bobvhfhh/singbox-lite-smallmem/contents/install.sh?ref=main' --jq .content | tr -d '\n' | base64 -d | bash
 ```
 
-匿名 `curl | sudo bash` 无法读取私有仓库。仓库公开后，可以直接一行安装：
+原项目的 `curl` / `wget` 命令适用于公开仓库。若将本仓库公开，服务器即可使用这一行匿名安装并直接打开菜单：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh | sudo bash
+(curl -LfsS https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -o /tmp/sb-lite-install || wget -q https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -O /tmp/sb-lite-install) && sudo bash /tmp/sb-lite-install
 ```
 
-也可以用 `gh` 克隆后从本地安装：
-
-```bash
-gh repo clone bobvhfhh/singbox-lite-smallmem
-cd singbox-lite-smallmem
-sudo bash install.sh --source "$PWD"
-```
+公开安装需要 `bash`、`curl` 或 `wget`、`sudo`；当前私有仓库的一行命令还需要 `gh` 登录及 `base64`。
 
 ## 运行与更新
 
-安装完成后启动管理菜单：
+安装器每次运行都会打开管理菜单。安装后也可随时使用原项目同名命令启动：
 
 ```bash
-sudo sb-lite
+sudo sb
 ```
 
 重新运行一键安装命令会更新已安装的四个配套脚本。更新本地克隆版：
@@ -65,6 +59,6 @@ sing-box 与 Xray 使用按系统可见内存和 cgroup 限额计算的 `GOMEMLI
 
 ## 文件与路径
 
-`install.sh` 安装这四个运行脚本：`singbox.sh`、`xray_manager.sh`、`advanced_relay.sh`、`parser.sh`。已安装路径为 `/usr/local/lib/singbox-lite-smallmem/`，启动命令为 `/usr/local/bin/sb-lite`。现有服务器配置继续使用项目原有路径 `/usr/local/etc/sing-box/` 和 `/usr/local/etc/xray/`。
+`install.sh` 安装这四个运行脚本：`singbox.sh`、`xray_manager.sh`、`advanced_relay.sh`、`parser.sh`。已安装路径为 `/usr/local/lib/singbox-lite-smallmem/`，启动命令为 `/usr/local/bin/sb`。现有服务器配置继续使用项目原有路径 `/usr/local/etc/sing-box/` 和 `/usr/local/etc/xray/`。
 
 本地克隆用户可用 `--branch NAME`、`--install-dir DIR` 和 `--bin PATH` 调整分支和安装路径；`install.sh --help` 会显示选项。
