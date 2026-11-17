@@ -148,7 +148,8 @@ if [[ "${EUID}" -ne 0 ]]; then
     sudo bash "${source_dir}/install.sh" --source "$source_dir" --install-dir "$install_dir" --bin "$bin_path" --install-only
     install_rc=$?
     [[ "$install_rc" -eq 0 ]] || exit "$install_rc"
-    exec sudo "$bin_path"
+    sudo "$bin_path"
+    exit $?
 fi
 
 install -d -m 0755 "$install_dir" "$(dirname -- "$bin_path")"
@@ -188,4 +189,4 @@ stage_dir=""
 if [[ "$install_only" -eq 1 ]]; then
     exit 0
 fi
-exec "$bin_path"
+"$bin_path"
