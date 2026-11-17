@@ -116,7 +116,7 @@ else
     source_dir="$(mktemp -d "${TMPDIR:-/tmp}/singbox-lite-smallmem.XXXXXX")"
     temp_source_dir="$source_dir"
     info "downloading ${REPO}@${branch}"
-    for file in "${FILES[@]}"; do
+    for file in "${RUNTIME_FILES[@]}"; do
         download_url="https://raw.githubusercontent.com/${REPO}/${branch}/${file}"
         if command -v curl >/dev/null 2>&1; then
             curl --fail --location --silent \
@@ -124,14 +124,7 @@ else
         else
             wget -q "$download_url" -O "${source_dir}/${file}" || rm -f -- "${source_dir}/${file}"
         fi
-        if [[ ! -s "${source_dir}/${file}" ]]; then
-            if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1 \
-                || ! gh api "repos/${REPO}/contents/${file}?ref=${branch}" --jq .content \
-                    | tr -d '\n' | base64 -d > "${source_dir}/${file}"; then
-                error "download failed for ${file}; verify repository visibility and network access"
-                exit 1
-            fi
-        fi
+        [[ -s "${source_dir}/${file}" ]] || { error "download failed for ${file}"; exit 1; }
         [[ -s "${source_dir}/${file}" ]] || { error "downloaded file is empty: ${file}"; exit 1; }
         bash -n "${source_dir}/${file}" || { error "Bash syntax check failed: ${file}"; exit 1; }
     done
@@ -139,7 +132,7 @@ else
     chmod 0644 "${source_dir}/"*
 fi
 
-for file in "${FILES[@]}"; do
+for file in "${RUNTIME_FILES[@]}"; do
     bash -n "${source_dir}/${file}" || { error "Bash syntax check failed: ${file}"; exit 1; }
 done
 

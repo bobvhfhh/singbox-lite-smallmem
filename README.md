@@ -11,27 +11,13 @@
 
 ## 一键安装
 
-安装器会检查四个脚本，通过 `sudo` 安装到 `/usr/local/lib/singbox-lite-smallmem`，创建原项目同名的 `/usr/local/bin/sb` 命令，然后只打开一次管理菜单。现有配置继续保留在 `/usr/local/etc/sing-box/` 和 `/usr/local/etc/xray/`。
-
-仓库目前是私有的。服务器先安装 GitHub CLI (`gh`)，登录有仓库读取权限的账号：
-
-```bash
-gh auth login -h github.com
-```
-
-登录后安装或更新只需这一行，执行后会直接进入管理菜单：
-
-```bash
-set -o pipefail; gh api 'repos/bobvhfhh/singbox-lite-smallmem/contents/install.sh?ref=main' --jq .content | tr -d '\n' | base64 -d | bash
-```
-
-原项目的 `curl` / `wget` 命令适用于公开仓库。若将本仓库公开，服务器即可使用这一行匿名安装并直接打开菜单：
+复制这一行到服务器执行。它会下载安装器、安装四个脚本、创建与原项目相同的 `/usr/local/bin/sb` 命令，并直接打开管理菜单：
 
 ```bash
 (curl -LfsS https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -o /tmp/sb-lite-install || wget -q https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -O /tmp/sb-lite-install) && sudo bash /tmp/sb-lite-install
 ```
 
-公开安装需要 `bash`、`curl` 或 `wget`、`sudo`；当前私有仓库的一行命令还需要 `gh` 登录及 `base64`。
+安装器会检查脚本语法，把运行脚本放在 `/usr/local/lib/singbox-lite-smallmem`。再次执行同一命令即可更新。需要 `bash`、`curl` 或 `wget` 和 `sudo`。现有配置保留在 `/usr/local/etc/sing-box/` 与 `/usr/local/etc/xray/`。
 
 ## 运行与更新
 
@@ -41,7 +27,7 @@ set -o pipefail; gh api 'repos/bobvhfhh/singbox-lite-smallmem/contents/install.s
 sudo sb
 ```
 
-重新运行一键安装命令会更新已安装的四个配套脚本。更新本地克隆版：
+重新运行上面的一键安装命令即可更新。也可以更新本地克隆版：
 
 ```bash
 cd singbox-lite-smallmem
