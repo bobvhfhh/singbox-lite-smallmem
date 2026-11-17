@@ -109,7 +109,7 @@ else
     temp_source_dir="$source_dir"
     info "downloading ${REPO}@${branch}"
     for file in "${FILES[@]}"; do
-        if ! curl --fail --location --silent --show-error \
+        if ! curl --fail --location --silent \
             "https://raw.githubusercontent.com/${REPO}/${branch}/${file}" -o "${source_dir}/${file}"; then
             if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1 \
                 || ! gh api "repos/${REPO}/contents/${file}?ref=${branch}" --jq .content \
@@ -121,6 +121,8 @@ else
         [[ -s "${source_dir}/${file}" ]] || { error "downloaded file is empty: ${file}"; exit 1; }
         bash -n "${source_dir}/${file}" || { error "Bash syntax check failed: ${file}"; exit 1; }
     done
+    chmod 0755 "$source_dir"
+    chmod 0644 "${source_dir}/"*
 fi
 
 for file in "${FILES[@]}"; do
@@ -145,13 +147,14 @@ for file in "${RUNTIME_FILES[@]}"; do
 done
 
 for file in "${RUNTIME_FILES[@]}"; do
-    mv -f -- "${stage_dir}/new/${file}" "${install_dir}/${file}"
     installed_files+=("$file")
+    mv -f -- "${stage_dir}/new/${file}" "${install_dir}/${file}"
 done
 
 if [[ -e "$bin_path" ]]; then
     cp -p -- "$bin_path" "${stage_dir}/backup-launcher"
 fi
+launcher_installed=1
 printf -v quoted_install_dir '%q' "$install_dir"
 launcher_tmp="${stage_dir}/new/launcher"
 cat > "$launcher_tmp" <<EOF
@@ -160,7 +163,6 @@ exec bash ${quoted_install_dir}/singbox.sh "\$@"
 EOF
 chmod 0755 "$launcher_tmp"
 mv -f -- "$launcher_tmp" "$bin_path"
-launcher_installed=1
 committed=1
 
 info "installed scripts to ${install_dir}"
