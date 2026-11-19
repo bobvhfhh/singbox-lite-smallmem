@@ -247,6 +247,7 @@ _ensure_xray_dependencies() {
 # --- Xray 专用原子 JSON 修改 ---
 _xray_atomic_modify_json() {
         local file="$1" filter="$2"
+        shift 2
         [ ! -f "$file" ] && return 1
         local tmp tmp_stub
         # Xray 新版本会按文件扩展名识别配置格式；候选配置必须保留 .json
@@ -259,7 +260,7 @@ _xray_atomic_modify_json() {
             rm -f -- "$tmp_stub"
             return 1
         fi
-        if ! jq "$filter" "$file" > "$tmp" || ! jq empty "$tmp" >/dev/null 2>&1; then
+        if ! jq "$@" "$filter" "$file" > "$tmp" || ! jq empty "$tmp" >/dev/null 2>&1; then
             _error "修改JSON失败: $file"
             rm -f -- "$tmp"
             return 1
@@ -1873,6 +1874,21 @@ _view_xray_nodes() {
     echo -e "  共 ${GREEN}${count}${NC} 个 Xray 节点"
 }
 
+_xray_delete_nodes_apply() {
+    local tags="$1" tag port name
+    while IFS=$'\t' read -r tag port name; do
+        [ -n "$tag" ] || continue
+        if [ -n "$name" ] && [ "$name" != null ]; then
+            _xray_remove_node_from_yaml "$name" "$port" || return 1
+        fi
+        rm -f -- "${XRAY_DIR}/${tag}.pem" "${XRAY_DIR}/${tag}.key" || return 1
+    done < <(jq -r --argjson tags "$tags" --slurpfile meta "$XRAY_METADATA" '
+        .inbounds[] | select(.tag as $tag | $tags | index($tag))
+        | [.tag, (.port|tostring), ($meta[0][.tag].name // .tag)] | @tsv' "$XRAY_CONFIG")
+    _xray_atomic_modify_json "$XRAY_CONFIG" '.inbounds |= map(select(.tag as $tag | $tags | index($tag) | not))' --argjson tags "$tags" || return 1
+    _xray_atomic_modify_json "$XRAY_METADATA" 'delpaths($tags | map([.]))' --argjson tags "$tags"
+}
+
 _delete_xray_node() {
     if [ ! -f "$XRAY_CONFIG" ] || ! jq -e '[.inbounds[]? | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")) | not)] | length > 0' "$XRAY_CONFIG" >/dev/null 2>&1; then
         _warn "当前没有 Xray 节点可删除。"; return
@@ -1899,7 +1915,7 @@ _delete_xray_node() {
     echo -e "  ${RED}[99]${NC} 删除全部节点"
     echo -e "  ${RED}[0]${NC} 返回"
     echo ""
-    read -p "请选择: " choice
+    read -r -p "请选择: " choice || return 1
     [ "$choice" == "0" ] && return
     if [ "$choice" == "99" ]; then _delete_all_xray_nodes; return; fi
     if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#tags[@]}" ]; then
@@ -1908,23 +1924,11 @@ _delete_xray_node() {
     local target_tag="${tags[$((choice-1))]}"
     local target_name="${names[$((choice-1))]}"
     local target_port="${ports[$((choice-1))]}"
-    read -p "$(echo -e ${RED}"确定删除 [$target_name]? (y/N): "${NC})" confirm
+    read -r -p "$(echo -e ${RED}"确定删除 [$target_name]? (y/N): "${NC})" confirm || return 1
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { _info "已取消。"; return; }
-    _xray_snapshot_state || { _error "无法创建变更快照。"; return 1; }
-    local snapshot="$XRAY_TX_DIR"
-    if { [ -z "$target_name" ] || [ "$target_name" = "null" ] || _xray_remove_node_from_yaml "$target_name" "$target_port"; } && \
-       _xray_atomic_modify_json "$XRAY_CONFIG" "del(.inbounds[] | select(.tag == \"$target_tag\"))" && \
-       _xray_atomic_modify_json "$XRAY_METADATA" "del(.\"$target_tag\")" && \
-       _manage_xray_service restart; then
-        rm -f -- "${XRAY_DIR}/${target_tag}.pem" "${XRAY_DIR}/${target_tag}.key"
-        _xray_drop_snapshot "$snapshot"
-    else
-        _error "删除失败，正在恢复原状态。"
-        _xray_restore_state "$snapshot"
-        _manage_xray_service restart >/dev/null 2>&1 || true
-        _xray_drop_snapshot "$snapshot"
-        return 1
-    fi
+    local tags_json
+    tags_json=$(jq -cn --arg tag "$target_tag" '[$tag]') || return 1
+    _run_xray_transaction _xray_delete_nodes_apply "$tags_json" || return 1
     _success "节点 [$target_name] 已删除！"
 }
 
@@ -1933,29 +1937,11 @@ _delete_all_xray_nodes() {
         _warn "当前没有 Xray 节点。"; return
     fi
     local count=$(jq '[.inbounds[]? | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")) | not)] | length' "$XRAY_CONFIG")
-    read -p "$(echo -e ${RED}"确定删除全部 ${count} 个节点? (y/N): "${NC})" confirm
+    read -r -p "$(echo -e ${RED}"确定删除全部 ${count} 个节点? (y/N): "${NC})" confirm || return 1
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { _info "已取消。"; return; }
-    _xray_snapshot_state || { _error "无法创建变更快照。"; return 1; }
-    local snapshot="$XRAY_TX_DIR" cleanup_ok=1 tag name port
-    while IFS=$'\t' read -r tag port name; do
-        if [ -n "$name" ] && ! _xray_remove_node_from_yaml "$name" "$port"; then cleanup_ok=0; fi
-    done < <(jq -r --slurpfile meta "$XRAY_METADATA" '
-        .inbounds[] | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")) | not) | [.tag, (.port|tostring), ($meta[0][.tag].name // .tag)] | @tsv' "$XRAY_CONFIG" 2>/dev/null)
-    if [ "$cleanup_ok" -eq 1 ] && \
-       _xray_atomic_modify_json "$XRAY_CONFIG" '.inbounds = [(.inbounds // [])[] | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")))]' && \
-       _xray_atomic_modify_json "$XRAY_METADATA" '{} ' && \
-       _manage_xray_service restart; then
-        for tag in $(jq -r '.inbounds[] | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")) | not) | .tag' "$snapshot/config.json" 2>/dev/null); do
-            rm -f -- "${XRAY_DIR}/${tag}.pem" "${XRAY_DIR}/${tag}.key"
-        done
-        _xray_drop_snapshot "$snapshot"
-    else
-        _error "批量删除失败，正在恢复原状态。"
-        _xray_restore_state "$snapshot"
-        _manage_xray_service restart >/dev/null 2>&1 || true
-        _xray_drop_snapshot "$snapshot"
-        return 1
-    fi
+    local tags_json
+    tags_json=$(jq -c '[.inbounds[]? | select((.tag // "" | test("^(vless-xhttp-reality|vless-reality|vless-tcp|shadowsocks)-in-[0-9]+$")) | not) | .tag]' "$XRAY_CONFIG") || return 1
+    _run_xray_transaction _xray_delete_nodes_apply "$tags_json" || return 1
     _success "全部 ${count} 个节点已删除！"
 }
 
@@ -1984,7 +1970,7 @@ _modify_xray_port() {
     ' "$XRAY_CONFIG" 2>/dev/null)
     echo -e "  ${RED}[0]${NC} 返回"
     echo ""
-    read -p "请选择 [0-${#tags[@]}]: " choice
+    read -r -p "请选择 [0-${#tags[@]}]: " choice || return 1
     [ "$choice" == "0" ] && return
     if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#tags[@]}" ]; then
         _error "无效选择！"; return
@@ -1993,7 +1979,13 @@ _modify_xray_port() {
     local old_port="${ports[$((choice-1))]}"
     local target_name="${names[$((choice-1))]}"
     _info "当前端口: ${old_port}"
-    local new_port=$(_input_port)
+    local new_port
+    new_port=$(_input_port) || return 1
+    _run_xray_transaction _modify_xray_port_apply "$target_tag" "$old_port" "$target_name" "$new_port"
+}
+
+_modify_xray_port_apply() {
+    local target_tag="$1" old_port="$2" target_name="$3" new_port="$4"
     
     # tag 保持稳定，避免证书路径与元数据键随端口改名后失配。
     local new_name=$(echo "$target_name" | sed "s/${old_port}/${new_port}/g")
@@ -2002,8 +1994,7 @@ _modify_xray_port() {
     if [ -n "$old_link" ]; then
         new_link=$(echo "$old_link" | sed -E "s/(:${old_port})([?&#\/]|$)/:${new_port}\2/g; s/(-${old_port})([?&#\/]|$)/-${new_port}\2/g; s/#[^#]*$/#$(_url_encode "$new_name")/g")
     fi
-    _xray_snapshot_state || { _error "无法创建变更快照。"; return 1; }
-    local snapshot="$XRAY_TX_DIR" change_ok=1
+    local change_ok=1
     _xray_atomic_modify_json "$XRAY_CONFIG" "(.inbounds[] | select(.tag == \"$target_tag\") | .port) = $new_port" || change_ok=0
     if [ "$change_ok" -eq 1 ] && [ -n "$target_name" ] && [ "$target_name" != "null" ] && [ -f "$CLASH_YAML_FILE" ]; then
         export MOD_NAME="$target_name" MOD_PORT="$old_port" NEW_NAME="$new_name" NEW_PORT="$new_port"
@@ -2022,14 +2013,7 @@ _modify_xray_port() {
             if [ "$change_ok" -eq 1 ]; then chmod 600 "$meta_tmp"; mv -f -- "$meta_tmp" "$XRAY_METADATA"; else rm -f -- "$meta_tmp"; fi
         fi
     fi
-    if [ "$change_ok" -ne 1 ] || ! _manage_xray_service restart; then
-        _error "修改端口失败，正在恢复原状态。"
-        _xray_restore_state "$snapshot"
-        _manage_xray_service restart >/dev/null 2>&1 || true
-        _xray_drop_snapshot "$snapshot"
-        return 1
-    fi
-    _xray_drop_snapshot "$snapshot"
+    [ "$change_ok" -eq 1 ] || return 1
     _success "节点 [$new_name] 端口已改为 ${new_port}！"
 }
 

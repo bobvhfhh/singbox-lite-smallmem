@@ -5597,6 +5597,14 @@ _rollback_port_modify_state() {
     _restore_full_transaction_snapshot "$backup_dir" "$restart_required" "端口修改"
 }
 
+_main_tx_stop_for_check() {
+    local snapshot="$1"
+    if [ "${SMALLMEM_STOP_FOR_CHECK:-0}" = 1 ] && [ -f "$snapshot/service-was-running" ]; then
+        : > "$snapshot/service-stop-attempted" || return 1
+        _manage_service stop || return 1
+    fi
+}
+
 _delete_one_main_node_locked() (
     local tag="$1" type="$2" port="$3" display_name="$4" proxy_name="$5"
     _is_argo_inbound_tag "$tag" && { _error "Argo 内部节点受保护，请使用 Argo 菜单管理。"; return 1; }
@@ -5665,6 +5673,7 @@ _delete_one_main_node_locked() (
     fi
 
     local check_result
+    _main_tx_stop_for_check "$backup_dir" || return 1
     if ! check_result=$(_check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
         _error "删除后的组合配置校验失败，已回滚："
         echo "$check_result"
@@ -5685,7 +5694,7 @@ _delete_one_main_node_locked() (
         fi
     fi
     delete_restart_attempted=1
-    if ! _manage_service restart; then
+    if ! SKIP_SINGBOX_CONFIG_CHECK=1 _manage_service restart; then
         _error "服务重启失败，正在恢复删除前状态。"
         return 1
     fi
@@ -5770,6 +5779,7 @@ _delete_all_main_nodes_locked() (
     fi
 
     local check_result
+    _main_tx_stop_for_check "$backup_dir" || return 1
     if ! check_result=$(_check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
         _error "批量删除后的组合配置校验失败，已回滚："
         echo "$check_result"
@@ -5799,7 +5809,7 @@ _delete_all_main_nodes_locked() (
     fi
 
     delete_all_restart_attempted=1
-    if ! _manage_service restart; then
+    if ! SKIP_SINGBOX_CONFIG_CHECK=1 _manage_service restart; then
         _error "服务重启失败，已恢复删除前状态。"
         return 1
     fi
@@ -6818,13 +6828,14 @@ _modify_port() (
     _refresh_modified_node_artifacts "$final_tag" "$final_proxy_name" || return 1
     
     local modify_check_result
+    _main_tx_stop_for_check "$modify_backup_dir" || return 1
     if ! modify_check_result=$(_check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
         _error "端口修改后的组合配置校验失败："
         echo "$modify_check_result"
         return 1
     fi
     modify_restart_attempted=1
-    if ! _manage_service restart; then
+    if ! SKIP_SINGBOX_CONFIG_CHECK=1 _manage_service restart; then
         _error "端口修改后服务重启失败。"
         return 1
     fi
@@ -7071,15 +7082,16 @@ _modify_node_apply() (
     fi
 
     _refresh_modified_node_artifacts "$tag" "$old_proxy_name" || return 1
-    local check_result
-    if ! check_result=$(_check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
-        _error "节点修改后的组合配置校验失败："
-        echo "$check_result"
-        return 1
-    fi
     if [ "$restart_needed" -eq 1 ]; then
+        local check_result
+        _main_tx_stop_for_check "$backup_dir" || return 1
+        if ! check_result=$(_check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
+            _error "节点修改后的组合配置校验失败："
+            echo "$check_result"
+            return 1
+        fi
         restart_attempted=1
-        _manage_service restart || { _error "节点修改后服务重启失败。"; return 1; }
+        SKIP_SINGBOX_CONFIG_CHECK=1 _manage_service restart || { _error "节点修改后服务重启失败。"; return 1; }
     fi
     committed=1
     trap - EXIT INT TERM

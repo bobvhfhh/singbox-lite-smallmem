@@ -20,6 +20,8 @@ jobs:
         run: docker exec smallmem bash /work/tests/integration.sh
       - name: Service early-exit regression
         run: docker exec smallmem bash /work/tests/service-failure.sh
+      - name: Port edit and deletion regression
+        run: docker exec smallmem bash /work/tests/maintenance.sh
       - name: Collect measurements
         if: always()
         run: |
