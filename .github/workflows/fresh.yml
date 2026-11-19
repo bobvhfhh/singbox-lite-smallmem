@@ -1,0 +1,34 @@
+name: Fresh installation audit
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  menu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ['ubuntu:24.04', 'alpine:3.22']
+        core: [singbox, xray]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build clean base without cores or dependencies
+        run: docker build --build-arg DISTRO=${{ matrix.distro }} -f tests/fresh.Dockerfile -t fresh-test .
+      - name: Start 128MiB NAT machine
+        run: docker run -d --name fresh --memory=128m --memory-swap=128m --cpus=0.5 -v "$PWD:/work:ro" fresh-test
+      - name: Use actual installer and interactive menus
+        run: python3 tests/fresh-menu.py fresh ${{ matrix.core }}
+      - name: Collect install failure and memory evidence
+        if: always()
+        run: |
+          mkdir -p fresh-results
+          docker exec fresh cat /sys/fs/cgroup/memory.events > fresh-results/memory.events || true
+          docker exec fresh cat /sys/fs/cgroup/memory.peak > fresh-results/memory.peak || true
+          docker exec fresh sh -c 'tail -40 /var/log/sing-box.log /var/log/xray.log' > fresh-results/cores.log 2>&1 || true
+          docker exec fresh ps > fresh-results/processes.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fresh-${{ strategy.job-index }}-${{ matrix.core }}
+          path: fresh-results
