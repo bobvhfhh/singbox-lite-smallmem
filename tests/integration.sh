@@ -90,6 +90,30 @@ for core in singbox xray; do
     kill -0 "$(cat "$pidfile")" || fail "$core rollback did not restore service"
 done
 
+# 快照复制失败必须在操作前中止。中断发生在改配置后或停服务后都要恢复。
+before_hash=$(sha256sum "$XRAY_CONFIG" | cut -d' ' -f1)
+if (
+    cp() { return 72; }
+    _run_xray_transaction true
+); then fail 'partial Xray snapshot accepted'; fi
+[[ "$(sha256sum "$XRAY_CONFIG" | cut -d' ' -f1)" == "$before_hash" ]] || fail 'snapshot error changed Xray config'
+if (
+    interrupted_operation() {
+        _xray_atomic_modify_json "$XRAY_CONFIG" '.test_interrupted=true' || return 1
+        kill -TERM "$BASHPID"
+    }
+    _run_xray_transaction interrupted_operation
+); then fail 'interrupted operation committed'; fi
+[[ "$(sha256sum "$XRAY_CONFIG" | cut -d' ' -f1)" == "$before_hash" ]] || fail 'operation interruption did not restore config'
+must _xray_is_pid_file_running_cmd "$XRAY_PID_FILE" "$XRAY_BIN"
+if (
+    record_transaction_pid() { echo "$BASHPID" > /results/transaction-pid; }
+    _validate_xray_config() { kill -TERM "$(cat /results/transaction-pid)"; sleep 1; return 1; }
+    _run_xray_transaction record_transaction_pid
+); then fail 'interrupted validation committed'; fi
+must _xray_is_pid_file_running_cmd "$XRAY_PID_FILE" "$XRAY_BIN"
+echo 'PASS: Xray partial snapshots and interrupted transactions restore prior state'
+
 # 两个核心同时运行，分别统计空闲 CPU 和 RSS。
 python3 tests/resource-sample.py "$(cat "$PID_FILE")" 12 singbox-idle &
 sample_sb=$!

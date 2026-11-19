@@ -238,17 +238,11 @@ _install_yq() {
         tmp=$(mktemp /tmp/singboxlite-yq.XXXXXX) || return 1
         checksums_tmp=$(mktemp /tmp/singboxlite-yq-checksums.XXXXXX) || { rm -f -- "$tmp"; return 1; }
         order_tmp=$(mktemp /tmp/singboxlite-yq-order.XXXXXX) || { rm -f -- "$tmp" "$checksums_tmp"; return 1; }
-        release_json=$(curl -fsSL --max-time 15 https://api.github.com/repos/mikefarah/yq/releases/latest 2>/dev/null) || true
-        release_tag=$(printf '%s' "$release_json" | jq -r '.tag_name // empty' 2>/dev/null)
-        if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            rm -f -- "$tmp" "$checksums_tmp" "$order_tmp"
-            _error "无法解析 yq 官方 release tag"
-            return 1
-        fi
+        release_tag="v4.54.3"
         local release_base="https://github.com/mikefarah/yq/releases/download/${release_tag}"
-        if ! wget -qO "$tmp" "${release_base}/${asset}" \
-            || ! wget -qO "$checksums_tmp" "${release_base}/checksums" \
-            || ! wget -qO "$order_tmp" "${release_base}/checksums_hashes_order"; then
+        if ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 120 "${release_base}/${asset}" -o "$tmp" \
+            || ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 60 "${release_base}/checksums" -o "$checksums_tmp" \
+            || ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 60 "${release_base}/checksums_hashes_order" -o "$order_tmp"; then
             rm -f -- "$tmp" "$checksums_tmp" "$order_tmp"
             _error "yq 或官方校验文件下载失败"
             return 1
@@ -282,7 +276,7 @@ _install_yq() {
 
 # 核心环境检测 (与主脚本 singbox.sh 保持一致)
 _detect_init_system() {
-    if [ -f /sbin/openrc-run ] || command -v rc-service &>/dev/null; then
+    if command -v rc-service &>/dev/null && [ -e /run/openrc/softlevel ]; then
         INIT_SYSTEM="openrc"
     elif command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
         INIT_SYSTEM="systemd"

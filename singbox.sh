@@ -189,7 +189,7 @@ _get_ip() { _get_public_ip; } # 别名兼容
 
 # 系统环境检测
 _detect_init_system() {
-    if [ -f /sbin/openrc-run ] || command -v rc-service &>/dev/null; then
+    if command -v rc-service &>/dev/null && [ -e /run/openrc/softlevel ]; then
         export INIT_SYSTEM="openrc"
         export SERVICE_FILE="/etc/init.d/sing-box"
     elif command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
@@ -1292,22 +1292,16 @@ _install_yq() {
             *) _error "yq 不支持当前架构: $(uname -m)"; return 1 ;;
         esac
         local asset="yq_linux_${arch}"
-        local release_json release_tag release_base
-        release_json=$(curl -fsSL --max-time 15 https://api.github.com/repos/mikefarah/yq/releases/latest 2>/dev/null) || true
-        release_tag=$(printf '%s' "$release_json" | jq -r '.tag_name // empty' 2>/dev/null)
-        if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            _error "无法解析 yq 官方 release tag。"
-            return 1
-        fi
+        local release_tag="v4.54.3" release_base
         release_base="https://github.com/mikefarah/yq/releases/download/${release_tag}"
 
         local tmp_yq checksums_tmp order_tmp
         tmp_yq=$(mktemp "$(dirname "$YQ_BINARY")/.yq.new.XXXXXX") || return 1
         checksums_tmp=$(mktemp /tmp/singboxlite-yq-checksums.XXXXXX) || { rm -f -- "$tmp_yq"; return 1; }
         order_tmp=$(mktemp /tmp/singboxlite-yq-order.XXXXXX) || { rm -f -- "$tmp_yq" "$checksums_tmp"; return 1; }
-        if ! wget -qO "$tmp_yq" "${release_base}/${asset}" \
-            || ! wget -qO "$checksums_tmp" "${release_base}/checksums" \
-            || ! wget -qO "$order_tmp" "${release_base}/checksums_hashes_order"; then
+        if ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 120 "${release_base}/${asset}" -o "$tmp_yq" \
+            || ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 60 "${release_base}/checksums" -o "$checksums_tmp" \
+            || ! curl -fLsS --retry 3 --connect-timeout 10 --max-time 60 "${release_base}/checksums_hashes_order" -o "$order_tmp"; then
             rm -f -- "$tmp_yq" "$checksums_tmp" "$order_tmp"
             _error "yq 或官方校验文件下载失败。"
             return 1
@@ -3276,8 +3270,8 @@ _cleanup_runtime_logs() {
 
 _setup_log_cleanup() {
     command -v crontab >/dev/null 2>&1 || {
-        _warning "未找到 crontab，无法启用每 2 天自动清理日志。"
-        return 1
+        _cleanup_runtime_logs
+        return $?
     }
 
     local tag="# sing-box-log-cleanup"
@@ -8017,7 +8011,7 @@ _main_menu() {
         echo -e "    ${YELLOW}[0]${NC} 退出脚本"
         echo ""
         
-        read -p "  请输入选项 [0-19]: " choice
+        read -r -p "  请输入选项 [0-19]: " choice || return 0
  
         case $choice in
             1) _require_singbox && _show_add_node_menu ;;
@@ -8144,7 +8138,7 @@ _main_menu() {
     echo -e "    ${YELLOW}[0]${NC} 返回主菜单"
     echo ""
     
-    read -p "  请输入选项 [0-3]: " choice
+    read -r -p "  请输入选项 [0-3]: " choice || return 0
     
     case $choice in
         1)

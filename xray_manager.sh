@@ -124,7 +124,7 @@ fi
 # --- 环境检测 ---
 if ! declare -f _detect_init_system >/dev/null 2>&1; then
     _detect_init_system() {
-        if [ -f /sbin/openrc-run ] || command -v rc-service >/dev/null; then
+        if command -v rc-service >/dev/null && [ -e /run/openrc/softlevel ]; then
             INIT_SYSTEM="openrc"
         elif command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
             INIT_SYSTEM="systemd"
@@ -464,7 +464,7 @@ _xray_check_port_occupied() {
 _xray_is_pid_running_cmd() {
     local pid="$1"
     local pattern="$2"
-    [ -n "$pid" ] || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] || return 1
     kill -0 "$pid" 2>/dev/null || return 1
     if [ -r "/proc/${pid}/cmdline" ]; then
         tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -Fq "$pattern"
@@ -868,13 +868,14 @@ _check_and_fix_xray_listen() {
 XRAY_TX_DIR=""
 _xray_snapshot_state() {
     XRAY_TX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/singboxlite-xray.XXXXXX") || return 1
-    mkdir -p "$XRAY_TX_DIR/certs"
-    if [ -f "$XRAY_CONFIG" ]; then cp -p "$XRAY_CONFIG" "$XRAY_TX_DIR/config.json" && : > "$XRAY_TX_DIR/config.present"; fi
-    if [ -f "$XRAY_METADATA" ]; then cp -p "$XRAY_METADATA" "$XRAY_TX_DIR/metadata.json" && : > "$XRAY_TX_DIR/metadata.present"; fi
-    if [ -f "$CLASH_YAML_FILE" ]; then cp -p "$CLASH_YAML_FILE" "$XRAY_TX_DIR/clash.yaml" && : > "$XRAY_TX_DIR/clash.present"; fi
+    mkdir -p "$XRAY_TX_DIR/certs" || return 1
+    if [ -f "$XRAY_CONFIG" ]; then cp -p "$XRAY_CONFIG" "$XRAY_TX_DIR/config.json" && : > "$XRAY_TX_DIR/config.present" || return 1; fi
+    if [ -f "$XRAY_METADATA" ]; then cp -p "$XRAY_METADATA" "$XRAY_TX_DIR/metadata.json" && : > "$XRAY_TX_DIR/metadata.present" || return 1; fi
+    if [ -f "$CLASH_YAML_FILE" ]; then cp -p "$CLASH_YAML_FILE" "$XRAY_TX_DIR/clash.yaml" && : > "$XRAY_TX_DIR/clash.present" || return 1; fi
     local file
     for file in "$XRAY_DIR"/*.pem "$XRAY_DIR"/*.key; do
-        [ -f "$file" ] && cp -p "$file" "$XRAY_TX_DIR/certs/"
+        [ -f "$file" ] || continue
+        cp -p "$file" "$XRAY_TX_DIR/certs/" || return 1
     done
     return 0
 }
@@ -882,14 +883,16 @@ _xray_snapshot_state() {
 _xray_restore_state() {
     local snapshot="$1" file
     [ -d "$snapshot" ] || return 1
-    if [ -f "$snapshot/config.present" ]; then cp -p "$snapshot/config.json" "$XRAY_CONFIG"; else rm -f -- "$XRAY_CONFIG"; fi
-    if [ -f "$snapshot/metadata.present" ]; then cp -p "$snapshot/metadata.json" "$XRAY_METADATA"; else rm -f -- "$XRAY_METADATA"; fi
-    if [ -f "$snapshot/clash.present" ]; then cp -p "$snapshot/clash.yaml" "$CLASH_YAML_FILE"; fi
+    if [ -f "$snapshot/config.present" ]; then cp -p "$snapshot/config.json" "$XRAY_CONFIG" || return 1; else rm -f -- "$XRAY_CONFIG" || return 1; fi
+    if [ -f "$snapshot/metadata.present" ]; then cp -p "$snapshot/metadata.json" "$XRAY_METADATA" || return 1; else rm -f -- "$XRAY_METADATA" || return 1; fi
+    if [ -f "$snapshot/clash.present" ]; then cp -p "$snapshot/clash.yaml" "$CLASH_YAML_FILE" || return 1; else rm -f -- "$CLASH_YAML_FILE" || return 1; fi
     for file in "$XRAY_DIR"/*.pem "$XRAY_DIR"/*.key; do
-        [ -f "$file" ] && rm -f -- "$file"
+        [ -f "$file" ] || continue
+        rm -f -- "$file" || return 1
     done
     for file in "$snapshot/certs"/*.pem "$snapshot/certs"/*.key; do
-        [ -f "$file" ] && cp -p "$file" "$XRAY_DIR/"
+        [ -f "$file" ] || continue
+        cp -p "$file" "$XRAY_DIR/" || return 1
     done
     chmod 600 "$XRAY_CONFIG" "$XRAY_METADATA" "$CLASH_YAML_FILE" 2>/dev/null || true
     return 0
@@ -902,65 +905,71 @@ _xray_drop_snapshot() {
     esac
 }
 
-_run_xray_transaction() {
+_run_xray_transaction() (
     local operation="$1"
     shift
     _xray_snapshot_state || { _error "无法创建变更快照。"; return 1; }
     local snapshot="$XRAY_TX_DIR"
-    local was_running=0
+    local was_running=0 committed=0 service_touched=0
     case "$INIT_SYSTEM" in
         systemd) systemctl is-active --quiet xray && was_running=1 ;;
         openrc) rc-service xray status >/dev/null 2>&1 && was_running=1 ;;
         direct) _xray_is_pid_file_running_cmd "$XRAY_PID_FILE" "$XRAY_BIN" && was_running=1 ;;
     esac
 
+    _xray_transaction_finish() {
+        local rc=$? restore_ok=1
+        trap - EXIT INT TERM
+        if [ "$committed" -ne 1 ]; then
+            if [ "$service_touched" -eq 1 ]; then
+                _manage_xray_service stop >/dev/null 2>&1 || restore_ok=0
+            fi
+            _xray_restore_state "$snapshot" || restore_ok=0
+            if [ "$service_touched" -eq 1 ] && [ "$was_running" -eq 1 ]; then
+                SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start >/dev/null 2>&1 || restore_ok=0
+            fi
+            if [ "$restore_ok" -ne 1 ]; then
+                _error "Xray 回滚未完成，恢复快照保留于: $snapshot"
+                exit 1
+            fi
+            _error "Xray 本次操作未提交，已恢复原状态。"
+        fi
+        _xray_drop_snapshot "$snapshot"
+        exit "$rc"
+    }
+    trap _xray_transaction_finish EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
     export XRAY_SKIP_ATOMIC_CORE_TEST=1
     if ! "$operation" "$@"; then
-        unset XRAY_SKIP_ATOMIC_CORE_TEST
         _error "Xray 节点生成失败，正在恢复配置、元数据、证书和 Clash 条目。"
-        _xray_restore_state "$snapshot"
-        _xray_drop_snapshot "$snapshot"
         return 1
     fi
 
     if [ "$was_running" -eq 1 ]; then
+        service_touched=1
         if ! _manage_xray_service stop; then
-            unset XRAY_SKIP_ATOMIC_CORE_TEST
             _error "无法暂时停止 Xray 完成低内存校验，正在恢复原状态。"
-            _xray_restore_state "$snapshot"
-            SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start >/dev/null 2>&1 || true
-            _xray_drop_snapshot "$snapshot"
             return 1
         fi
     fi
 
     local check_result
     if ! check_result=$(GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 _validate_xray_config 2>&1); then
-        unset XRAY_SKIP_ATOMIC_CORE_TEST
         _error "Xray 新配置校验失败：${check_result}"
-        _xray_restore_state "$snapshot"
-        if [ "$was_running" -eq 1 ]; then
-            SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start >/dev/null 2>&1 || true
-        fi
-        _xray_drop_snapshot "$snapshot"
         return 1
     fi
     unset XRAY_SKIP_ATOMIC_CORE_TEST
 
-    if SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service restart; then
-        _xray_drop_snapshot "$snapshot"
+    service_touched=1
+    if SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start; then
+        committed=1
         return 0
     fi
     _error "Xray 新配置启动失败，正在恢复原配置。"
-    _xray_restore_state "$snapshot"
-    if [ "$was_running" -eq 1 ]; then
-        SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start >/dev/null 2>&1 || true
-    else
-        SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service stop >/dev/null 2>&1 || true
-    fi
-    _xray_drop_snapshot "$snapshot"
     return 1
-}
+)
 
 _view_xray_log() {
     if [ "$INIT_SYSTEM" == "systemd" ]; then
@@ -1059,7 +1068,7 @@ _build_reality_stream() {
 _input_port() {
     local port=""
     while true; do
-        read -p "请输入监听端口: " port
+        read -r -p "请输入监听端口: " port || return 1
         [[ -z "$port" ]] && _error "端口不能为空" && continue
         if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
             _error "无效端口号！"
@@ -2026,7 +2035,7 @@ _xray_add_node_menu() {
         echo -e "  ${YELLOW}[2]${NC} VLESS+XHTTP+TLS (H2回源)"
         echo -e "  ${RED}[0]${NC} 返回"
         echo "  ==============================="
-        read -p "请选择 [0-2]: " choice
+        read -r -p "请选择 [0-2]: " choice || return 0
         if [ "$choice" != "0" ] && [ ! -f "$XRAY_BIN" ]; then
             _error "Xray 尚未安装！请先安装 Xray 核心。"
             read -p "按回车键返回..."; continue
@@ -2108,7 +2117,7 @@ _xray_menu() {
         echo -e "    ${RED}[99]${NC} 卸载 Xray"
         echo -e "    ${RED}[0]${NC}  返回主菜单"
         echo "  =============================="
-        read -p "请选择 [0-99]: " choice
+        read -r -p "请选择 [0-99]: " choice || return 0
         case $choice in
             1) _manage_xray_service "start"; read -p "按回车键继续..." ;;
             2) _manage_xray_service "stop"; read -p "按回车键继续..." ;;
