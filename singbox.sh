@@ -6,7 +6,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:
 umask 077
 
 # 基础路径定义
-export SCRIPT_VERSION="30"
+export SCRIPT_VERSION="31-smallmem"
 export DEFAULT_SNI="www.amd.com"
 export WS_EARLY_DATA_SIZE="2560"
 export WS_EARLY_DATA_HEADER="Sec-WebSocket-Protocol"
@@ -564,7 +564,7 @@ _manage_service() {
             _time_prepare_ntp_config || return 1
             _ensure_relay_config || return 1
             local preflight_result
-            if ! preflight_result=$(GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=50 \
+            if ! preflight_result=$(GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
                 _check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
                 _error "拒绝启动：config.json + relay.json 组合配置无效。"
                 echo "$preflight_result"
@@ -602,7 +602,7 @@ _manage_service() {
                     fi
                     rm -f "$PID_FILE"
                     [ -s "${SINGBOX_DIR}/relay.json" ] || echo '{"inbounds":[],"outbounds":[],"route":{"rules":[]}}' > "${SINGBOX_DIR}/relay.json"
-                    nohup env GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=50 \
+                    nohup env GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
                         "$SINGBOX_BIN" run -c "$CONFIG_FILE" -c "${SINGBOX_DIR}/relay.json" \
                         >> "$LOG_FILE" 2>&1 8>&- 9>&- 219>&- &
                     echo $! > "$PID_FILE"
@@ -620,16 +620,25 @@ _manage_service() {
                         local pid
                         pid=$(cat "$PID_FILE" 2>/dev/null)
                         if _is_pid_running_cmd "$pid" "$SINGBOX_BIN"; then
-                            kill "$pid" 2>/dev/null
+                            kill "$pid" 2>/dev/null || return 1
+                            local wait_attempt
+                            for ((wait_attempt=0; wait_attempt<50; wait_attempt++)); do
+                                _is_pid_running_cmd "$pid" "$SINGBOX_BIN" || break
+                                sleep 0.1
+                            done
+                            if _is_pid_running_cmd "$pid" "$SINGBOX_BIN"; then
+                                _error "sing-box 尚未退出，已取消后续校验和启动。"
+                                return 1
+                            fi
                         fi
                     fi
                     rm -f "$PID_FILE"
                     _success "sing-box direct 后台进程已停止。"
                     ;;
                 restart)
-                    _manage_service stop
+                    _manage_service stop || return 1
                     sleep 1
-                    _manage_service start
+                    SKIP_SINGBOX_CONFIG_CHECK=1 _manage_service start
                     ;;
                 status)
                     if _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"; then
@@ -1210,7 +1219,16 @@ _rollback_main_node_creation() {
     _error "共享 YAML 写入失败，已回滚刚创建的运行配置。"
 }
 
-# 内存限额计算
+# IPv4-only NAT 容器可能禁用 IPv6，不能固定绑定 ::。
+_node_listen_address() {
+    if [ ! -r /proc/net/if_inet6 ] || [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null)" = "1" ]; then
+        echo "0.0.0.0"
+    else
+        echo "::"
+    fi
+}
+
+# Go 软内存预算：小机器预留系统空间，较大机器也不随 RAM 放大堆预算。
 _get_mem_limit() {
     local total_mem_mb=0 cgroup_limit="" candidate_mb=0
     local limit limit_file
@@ -1246,12 +1264,8 @@ _get_mem_limit() {
     if [ "$total_mem_mb" -le 128 ]; then
         # 128MB 机器保留更多空间给内核、TLS、socket 缓冲和测速客户端。
         limit=$((total_mem_mb * 5 / 16))
-    elif [ "$total_mem_mb" -le 256 ]; then
-        limit=$((total_mem_mb * 50 / 100))
-    elif [ "$total_mem_mb" -le 512 ]; then
-        limit=$((total_mem_mb * 65 / 100))
     else
-        limit=$((total_mem_mb * 80 / 100))
+        limit=64
     fi
 
     [ "$limit" -lt 32 ] && limit=32
@@ -1351,7 +1365,8 @@ export DEP_STATE_VERSION="20260831-lowmem-1"
 export SMALLMEM_MODE=1
 export SMALLMEM_STOP_FOR_CHECK=1
 export GOMEMLIMIT="$(_get_mem_limit)MiB"
-export GOGC=50
+export GOGC=100
+export GOMAXPROCS=1
 _detect_init_system
 case "$INIT_SYSTEM" in
     openrc) export SERVICE_FILE="/etc/init.d/sing-box" ;;
@@ -1359,7 +1374,7 @@ case "$INIT_SYSTEM" in
     *) export SERVICE_FILE="" ;;
 esac
 
-export -f _info _success _warn _warning _error _flock_wait _url_encode _url_decode _ws_path_with_early_data _cert_sha256_hex _tls_insecure_params _get_public_ip _detect_init_system _sync_system_time _release_install_cache _atomic_modify_json _atomic_modify_json_locked _atomic_modify_yaml _atomic_modify_yaml_locked _with_state_lock _manage_service _pkg_install _get_proxy_field _add_node_to_yaml _add_node_to_yaml_locked _remove_node_from_yaml _remove_node_from_yaml_locked _find_proxy_name _nft_ensure_base _nft_delete_rules_by_comment _nft_port_expr _nft_apply_redirect_rule _nft_can_redirect _save_nftables_rules _remove_nftables_rules
+export -f _get_mem_limit _node_listen_address _info _success _warn _warning _error _flock_wait _url_encode _url_decode _ws_path_with_early_data _cert_sha256_hex _tls_insecure_params _get_public_ip _detect_init_system _sync_system_time _release_install_cache _atomic_modify_json _atomic_modify_json_locked _atomic_modify_yaml _atomic_modify_yaml_locked _with_state_lock _manage_service _pkg_install _get_proxy_field _add_node_to_yaml _add_node_to_yaml_locked _remove_node_from_yaml _remove_node_from_yaml_locked _find_proxy_name _nft_ensure_base _nft_delete_rules_by_comment _nft_port_expr _nft_apply_redirect_rule _nft_can_redirect _save_nftables_rules _remove_nftables_rules
 
 export -f _time_is_container _time_probe_ntp _time_has_ss2022 _time_prepare_ntp_config _time_prepare_ntp_config_locked _time_diagnostics _time_menu
 
@@ -3166,7 +3181,8 @@ After=network.target nss-lookup.target
 
 [Service]
 Environment="GOMEMLIMIT=${mem_limit_mb}MiB"
-Environment="GOGC=50"
+Environment="GOGC=100"
+Environment="GOMAXPROCS=1"
 ExecStart=${SINGBOX_BIN} run -c ${CONFIG_FILE} -c ${SINGBOX_DIR}/relay.json
 Restart=on-failure
 RestartSec=3s
@@ -3187,7 +3203,8 @@ _create_openrc_service() {
 
 description="sing-box service"
 export GOMEMLIMIT="${mem_limit_mb}MiB"
-export GOGC=50
+export GOGC=100
+export GOMAXPROCS=1
 command="${SINGBOX_BIN}"
 command_args="run -c ${CONFIG_FILE} -c ${SINGBOX_DIR}/relay.json"
 # 使用 supervise-daemon 实现守护和重启
@@ -4531,7 +4548,7 @@ _create_anytls_tls_node() {
     
     # --- 生成 Inbound 配置 (包含 padding_scheme) ---
     # padding_scheme 是 AnyTLS 的核心功能，用于流量填充对抗检测
-    local inbound_json=$(jq -n \
+    local inbound_json=$(jq -n --arg listen "$(_node_listen_address)" \
         --arg t "$tag" \
         --arg p "$port" \
         --arg pw "$password" \
@@ -4541,7 +4558,7 @@ _create_anytls_tls_node() {
         '{
             "type": "anytls",
             "tag": $t,
-            "listen": "::",
+            "listen": $listen,
             "listen_port": ($p|tonumber),
             "users": [{"name": "default", "password": $pw}],
             "padding_scheme": [
@@ -4662,107 +4679,36 @@ _create_anyreality_node() {
 }
 
 _add_anytls() {
-    local node_ip="${server_ip}"
+    local node_ip="${server_ip}" port="" server_name="www.amd.com"
+    local password="" name=""
     [[ "$BATCH_MODE" == "true" && -n "$BATCH_IP" ]] && node_ip="$BATCH_IP"
-    local port=""
-    local server_name="www.amd.com"
-    local mode_choice="1"
 
     if [ "$BATCH_MODE" = "true" ]; then
         port="$BATCH_PORT"
         server_name="${BATCH_SNI:-www.amd.com}"
-        mode_choice="${BATCH_ANYTLS_MODE:-1}"
+        password=$(${SINGBOX_BIN} generate uuid) || return 1
+        name="Batch-AnyTLS-${port}"
     else
-        _info "--- 添加 AnyTLS / Any-Reality 节点 ---"
-        echo "请选择节点协议:"
-        echo "  1) AnyTLS"
-        echo "  2) Any-Reality"
-        echo "  1,2) 同时创建 AnyTLS 和 Any-Reality"
-        read -p "请选择 [1/2/1,2] (默认: 1): " mode_choice
-        mode_choice=${mode_choice:-1}
-        mode_choice=$(echo "$mode_choice" | tr '，' ',' | xargs)
-        case "$mode_choice" in
-            1|2|1,2|2,1|"1 2"|"2 1") ;;
-            *) _error "无效选择"; return 1 ;;
-        esac
-
-        read -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip
+        _info "--- 添加 AnyTLS 节点 ---"
+        read -r -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip || return 1
         node_ip=${custom_ip:-$server_ip}
         while true; do
-            read -p "请输入起始监听端口: " port
+            read -r -p "请输入监听端口: " port || return 1
             [[ -z "$port" ]] && _error "端口不能为空" && continue
             _check_port_conflict "$port" "tcp" && continue
-            if [[ "$mode_choice" == "1,2" || "$mode_choice" == "2,1" || "$mode_choice" == "1 2" || "$mode_choice" == "2 1" ]]; then
-                local reality_port=$((port + 1))
-                if [ "$reality_port" -gt 65535 ]; then
-                    _error "同时创建两个节点时，起始端口不能为 65535。"
-                    continue
-                fi
-                _check_port_conflict "$reality_port" "tcp" && continue
-            fi
             break
         done
-        read -p "请输入伪装域名/SNI (默认: www.amd.com): " camouflage_domain
-        server_name=${camouflage_domain:-"www.amd.com"}
-    fi
-
-    local password=""
-    if [ "$BATCH_MODE" = "true" ]; then
-        password=$(${SINGBOX_BIN} generate uuid)
-    else
-        read -p "请输入密码/UUID (回车则随机生成，两种模式共用): " input_pw
+        read -r -p "请输入伪装域名/SNI (默认: www.amd.com): " camouflage_domain || return 1
+        server_name=${camouflage_domain:-www.amd.com}
+        read -r -s -p "请输入密码 (回车则随机生成): " input_pw || return 1
+        echo
         password=${input_pw:-$(${SINGBOX_BIN} generate uuid)}
+        local default_name="AnyTLS-${port}"
+        read -r -p "请输入 AnyTLS 节点名称 (默认: ${default_name}): " custom_name || return 1
+        name=${custom_name:-$default_name}
     fi
 
-    local created=false
-    case "$mode_choice" in
-        1)
-            local name
-            if [ "$BATCH_MODE" = "true" ]; then
-                name="Batch-AnyTLS-${port}"
-            else
-                local default_name="AnyTLS-${port}"
-                read -p "请输入 AnyTLS 节点名称 (默认: ${default_name}): " custom_name
-                name=${custom_name:-$default_name}
-            fi
-            _create_anytls_tls_node "$node_ip" "$port" "$server_name" "$password" "$name" || return 1
-            created=true
-            ;;
-        2)
-            local name
-            if [ "$BATCH_MODE" = "true" ]; then
-                name="Batch-Any-Reality-${port}"
-            else
-                local default_name="Any-Reality-${port}"
-                read -p "请输入 Any-Reality 节点名称 (默认: ${default_name}): " custom_name
-                name=${custom_name:-$default_name}
-            fi
-            _create_anyreality_node "$node_ip" "$port" "$server_name" "$password" "$name" || return 1
-            created=true
-            ;;
-        1,2|2,1|"1 2"|"2 1")
-            local tls_port="$port"
-            local reality_port=$((port + 1))
-            local tls_name reality_name
-            if [ "$BATCH_MODE" = "true" ]; then
-                tls_name="Batch-AnyTLS-${tls_port}"
-                reality_name="Batch-Any-Reality-${reality_port}"
-            else
-                local default_tls_name="AnyTLS-${tls_port}"
-                local default_reality_name="Any-Reality-${reality_port}"
-                _info "同时创建时，Any-Reality 将使用端口 ${reality_port}。"
-                read -p "请输入 AnyTLS 节点名称 (默认: ${default_tls_name}): " custom_tls_name
-                tls_name=${custom_tls_name:-$default_tls_name}
-                read -p "请输入 Any-Reality 节点名称 (默认: ${default_reality_name}): " custom_reality_name
-                reality_name=${custom_reality_name:-$default_reality_name}
-            fi
-            _create_anytls_tls_node "$node_ip" "$tls_port" "$server_name" "$password" "$tls_name" || return 1
-            _create_anyreality_node "$node_ip" "$reality_port" "$server_name" "$password" "$reality_name" || return 1
-            created=true
-            ;;
-    esac
-
-    [ "$created" = true ]
+    _create_anytls_tls_node "$node_ip" "$port" "$server_name" "$password" "$name"
 }
 
 _add_vless_reality() {
@@ -4807,8 +4753,8 @@ _add_vless_reality() {
     local yaml_ip="$node_ip"
     local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
     
-    local inbound_json=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg sn "$server_name" --arg pk "$private_key" --arg sid "$short_id" \
-        '{"type":"vless","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":"xtls-rprx-vision"}],"tls":{"enabled":true,"server_name":$sn,"reality":{"enabled":true,"handshake":{"server":$sn,"server_port":443},"private_key":$pk,"short_id":[$sid]}}}')
+    local inbound_json=$(jq -n --arg listen "$(_node_listen_address)" --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg sn "$server_name" --arg pk "$private_key" --arg sid "$short_id" \
+        '{"type":"vless","tag":$t,"listen":$listen,"listen_port":($p|tonumber),"users":[{"uuid":$u,"flow":"xtls-rprx-vision"}],"tls":{"enabled":true,"server_name":$sn,"reality":{"enabled":true,"handshake":{"server":$sn,"server_port":443},"private_key":$pk,"short_id":[$sid]}}}')
     _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound_json] | .inbounds |= unique_by(.tag)" || return 1
     _atomic_modify_json "$METADATA_FILE" ". + {\"$tag\": {\"publicKey\": \"$public_key\", \"shortId\": \"$short_id\"}}" || return 1
     
@@ -5113,8 +5059,8 @@ _add_tuic() {
     local yaml_ip="$node_ip"
     local link_ip="$node_ip"; [[ "$node_ip" == *":"* ]] && link_ip="[$node_ip]"
 
-    local inbound_json=$(jq -n --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg pw "$password" --arg cert "$cert_path" --arg key "$key_path" \
-        '{"type":"tuic","tag":$t,"listen":"::","listen_port":($p|tonumber),"users":[{"uuid":$u,"password":$pw}],"congestion_control":"bbr","tls":{"enabled":true,"alpn":["h3"],"certificate_path":$cert,"key_path":$key}}')
+    local inbound_json=$(jq -n --arg listen "$(_node_listen_address)" --arg t "$tag" --arg p "$port" --arg u "$uuid" --arg pw "$password" --arg cert "$cert_path" --arg key "$key_path" \
+        '{"type":"tuic","tag":$t,"listen":$listen,"listen_port":($p|tonumber),"users":[{"uuid":$u,"password":$pw}],"congestion_control":"bbr","tls":{"enabled":true,"alpn":["h3"],"certificate_path":$cert,"key_path":$key}}')
     _atomic_modify_json "$CONFIG_FILE" ".inbounds += [$inbound_json] | .inbounds |= unique_by(.tag)" || return 1
     
     local proxy_json=$(jq -n --arg n "$name" --arg s "$yaml_ip" --arg p "$port" --arg u "$uuid" --arg pw "$password" --arg sn "$server_name" \
@@ -7753,6 +7699,7 @@ _do_update_xray() {
 _create_xray_service_from_main() {
     local xray_bin="/usr/local/bin/xray"
     local xray_dir="/usr/local/etc/xray"
+    local mem_limit_mb=$(_get_mem_limit)
     if [ "$INIT_SYSTEM" == "systemd" ]; then
         if [ ! -f "/etc/systemd/system/xray.service" ]; then
             cat > /etc/systemd/system/xray.service << EOF
@@ -7762,6 +7709,9 @@ After=network.target
 
 [Service]
 Type=simple
+Environment="GOMEMLIMIT=${mem_limit_mb}MiB"
+Environment="GOGC=100"
+Environment="GOMAXPROCS=1"
 ExecStart=${xray_bin} run -c ${xray_dir}/config.json
 Restart=on-failure
 RestartSec=3
@@ -7785,8 +7735,11 @@ EOF
         if [ "$rewrite_openrc" = "true" ]; then
             local openrc_tmp
             openrc_tmp=$(mktemp /etc/init.d/.xray.XXXXXX) || return 1
-            cat > "$openrc_tmp" << 'EOF'
+            cat > "$openrc_tmp" << EOF
 #!/sbin/openrc-run
+export GOMEMLIMIT="${mem_limit_mb}MiB"
+export GOGC=100
+export GOMAXPROCS=1
 name="xray"
 description="Xray Service"
 command="/usr/local/bin/xray"
@@ -8473,7 +8426,7 @@ _run_main_create_transaction_locked() (
         : > "${tx_dir}/service-stop-attempted"
         _manage_service stop || return 1
     fi
-    if ! check_result=$(GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=50 \
+    if ! check_result=$(GOMEMLIMIT="$(_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
         _check_combined_config_files "$SINGBOX_BIN" "$CONFIG_FILE" "$RELAY_CONFIG_FILE" 2>&1); then
         _error "新节点未通过 config.json + relay.json 组合校验："
         echo "$check_result"
@@ -8842,6 +8795,10 @@ main() {
             fi
             if [ "$INIT_SYSTEM" == "openrc" ] && { ! grep -Fq "pidfile=\"${PID_FILE}\"" "$SERVICE_FILE" || ! grep -Fq "checkpath -d -m 0700 ${RUNTIME_DIR}" "$SERVICE_FILE"; }; then
                 _warn "检测到旧版 OpenRC PID 路径，正在迁移到 ${PID_FILE}..."
+                need_update=true
+            fi
+            if ! grep -Fq 'GOGC=100' "$SERVICE_FILE" || ! grep -Fq 'GOMAXPROCS=1' "$SERVICE_FILE" || ! grep -Fq "GOMEMLIMIT=$(_get_mem_limit)MiB" "$SERVICE_FILE"; then
+                _info "正在应用小内存核心运行参数..."
                 need_update=true
             fi
             if [ "$need_update" = true ]; then

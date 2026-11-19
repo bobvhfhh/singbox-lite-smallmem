@@ -1,0 +1,33 @@
+name: Small-memory NAT verification
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  protocols:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        memory: [128m, 256m]
+        ipv4_only: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build verified Linux cores
+        run: docker build -f tests/Dockerfile -t smallmem-test .
+      - name: Create limited NAT container
+        run: docker run -d --name smallmem --memory=${{ matrix.memory }} --memory-swap=${{ matrix.memory }} --cpus=0.5 --sysctl net.ipv6.conf.all.disable_ipv6=${{ matrix.ipv4_only }} -e IPV4_ONLY=${{ matrix.ipv4_only }} -v "$PWD:/work:ro" smallmem-test
+      - name: Install, create five protocols, rollback and transfer
+        run: docker exec smallmem bash /work/tests/integration.sh
+      - name: Collect measurements
+        if: always()
+        run: |
+          mkdir -p test-results
+          docker cp smallmem:/results/. test-results/ || true
+          docker inspect --format '{{json .State}}' smallmem > test-results/container-state.json
+          docker exec smallmem tail -30 /var/log/sing-box.log > test-results/singbox.log || true
+          docker exec smallmem tail -30 /var/log/xray.log > test-results/xray.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.memory }}-ipv4-${{ matrix.ipv4_only }}
+          path: test-results

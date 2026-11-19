@@ -135,6 +135,16 @@ if ! declare -f _detect_init_system >/dev/null 2>&1; then
 fi
 [ -z "$INIT_SYSTEM" ] && _detect_init_system
 
+if ! declare -f _node_listen_address >/dev/null 2>&1; then
+    _node_listen_address() {
+        if [ ! -r /proc/net/if_inet6 ] || [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null)" = "1" ]; then
+            echo "0.0.0.0"
+        else
+            echo "::"
+        fi
+    }
+fi
+
 # 与主脚本使用相同的 Go 运行时软内存限制。独立运行 Xray 管理器时，
 # 本地计算有效内存；由 singbox.sh 调用时直接复用主脚本实现。
 _xray_get_mem_limit() {
@@ -172,12 +182,8 @@ _xray_get_mem_limit() {
     [ "$total_mem_mb" -gt 0 ] || total_mem_mb=128
     if [ "$total_mem_mb" -le 128 ]; then
         limit=$((total_mem_mb * 5 / 16))
-    elif [ "$total_mem_mb" -le 256 ]; then
-        limit=$((total_mem_mb * 50 / 100))
-    elif [ "$total_mem_mb" -le 512 ]; then
-        limit=$((total_mem_mb * 65 / 100))
     else
-        limit=$((total_mem_mb * 80 / 100))
+        limit=64
     fi
     [ "$limit" -lt 32 ] && limit=32
     echo "$limit"
@@ -667,7 +673,8 @@ After=network.target
 [Service]
 Type=simple
 Environment="GOMEMLIMIT=${mem_limit_mb}MiB"
-Environment="GOGC=50"
+Environment="GOGC=100"
+Environment="GOMAXPROCS=1"
 ExecStart=${XRAY_BIN} run -c ${XRAY_CONFIG}
 Restart=on-failure
 RestartSec=3
@@ -687,7 +694,8 @@ _create_xray_openrc_service() {
 #!/sbin/openrc-run
 description="Xray Service"
 export GOMEMLIMIT="${mem_limit_mb}MiB"
-export GOGC=50
+export GOGC=100
+export GOMAXPROCS=1
 command="${XRAY_BIN}"
 command_args="run -c ${XRAY_CONFIG}"
 pidfile="${XRAY_PID_FILE}"
@@ -719,7 +727,7 @@ _validate_xray_config() {
     [ -f "$XRAY_CONFIG" ] || { _error "Xray 配置不存在。"; return 1; }
     jq empty "$XRAY_CONFIG" >/dev/null 2>&1 || { _error "Xray 配置不是有效 JSON。"; return 1; }
     [ -x "$XRAY_BIN" ] || return 0
-    env GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=50 \
+    env GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
         "$XRAY_BIN" run -test -config "$XRAY_CONFIG" >/dev/null 2>&1 || {
         _error "Xray 配置校验失败。"
         return 1
@@ -749,7 +757,7 @@ _manage_xray_service() {
                     :
                 else
                     rm -f "$pid_file"
-                    nohup env GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=50 \
+                    nohup env GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
                         "$XRAY_BIN" run -c "$XRAY_CONFIG" >> "$log_file" 2>&1 8>&- 9>&- 219>&- &
                     echo $! > "$pid_file"
                     sleep 1
@@ -761,15 +769,24 @@ _manage_xray_service() {
                     local pid
                     pid=$(cat "$pid_file" 2>/dev/null)
                     if _xray_is_pid_running_cmd "$pid" "$XRAY_BIN"; then
-                        kill "$pid" 2>/dev/null
+                        kill "$pid" 2>/dev/null || return 1
+                        local wait_attempt
+                        for ((wait_attempt=0; wait_attempt<50; wait_attempt++)); do
+                            _xray_is_pid_running_cmd "$pid" "$XRAY_BIN" || break
+                            sleep 0.1
+                        done
+                        if _xray_is_pid_running_cmd "$pid" "$XRAY_BIN"; then
+                            _error "Xray 尚未退出，已取消后续校验和启动。"
+                            return 1
+                        fi
                     fi
                 fi
                 rm -f "$pid_file"
                 ;;
             restart)
-                _manage_xray_service stop
+                _manage_xray_service stop || return 1
                 sleep 1
-                _manage_xray_service start || rc=$?
+                SKIP_XRAY_CORE_PREFLIGHT=1 _manage_xray_service start || rc=$?
                 ;;
             status)
                 if _xray_is_pid_file_running_cmd "$pid_file" "$XRAY_BIN"; then
@@ -837,6 +854,7 @@ EOF
 
 _check_and_fix_xray_listen() {
     [ -f "$XRAY_CONFIG" ] || return 1
+    [ "$(_node_listen_address)" = "::" ] || return 1
     if jq -e '.inbounds[]? | select(.listen == "0.0.0.0")' "$XRAY_CONFIG" >/dev/null 2>&1; then
         if _xray_atomic_modify_json "$XRAY_CONFIG" '(.inbounds[]? | select(.listen == "0.0.0.0") | .listen) = "::"'; then
             _success "已将既有 Xray 入站监听从 0.0.0.0 升级为 ::，支持 IPv4/IPv6 双栈。"
@@ -917,7 +935,7 @@ _run_xray_transaction() {
     fi
 
     local check_result
-    if ! check_result=$(GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=50 _validate_xray_config 2>&1); then
+    if ! check_result=$(GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 _validate_xray_config 2>&1); then
         unset XRAY_SKIP_ATOMIC_CORE_TEST
         _error "Xray 新配置校验失败：${check_result}"
         _xray_restore_state "$snapshot"
@@ -1120,10 +1138,10 @@ _add_vless_reality_vision() {
     
     # 构建 inbound JSON
     local stream=$(_build_reality_stream "tcp" "$sni" "$REALITY_PRIVATE_KEY" "$REALITY_SHORT_ID")
-    local inbound=$(jq -n --arg tag "$tag" --argjson port "$port" --arg uuid "$uuid" --arg flow "$flow" --argjson stream "$stream" \
+    local inbound=$(jq -n --arg listen "$(_node_listen_address)" --arg tag "$tag" --argjson port "$port" --arg uuid "$uuid" --arg flow "$flow" --argjson stream "$stream" \
         '{
             "tag": $tag,
-            "listen": "::",
+            "listen": $listen,
             "port": $port,
             "protocol": "vless",
             "settings": {
@@ -1574,11 +1592,11 @@ _add_vless_h2_tls() {
     _generate_xray_cert "$sni" "$cert_path" "$key_path" || return 1
     
     # 构建 inbound (Xray v26+ 旧h2已迁移至 XHTTP stream-one)
-    local inbound=$(jq -n --arg tag "$tag" --argjson port "$port" --arg uuid "$uuid" \
+    local inbound=$(jq -n --arg listen "$(_node_listen_address)" --arg tag "$tag" --argjson port "$port" --arg uuid "$uuid" \
         --arg cert "$cert_path" --arg key "$key_path" --arg sn "$sni" --arg pa "$path" \
         '{
             tag: $tag,
-            listen: "::",
+            listen: $listen,
             port: $port,
             protocol: "vless",
             settings: {
