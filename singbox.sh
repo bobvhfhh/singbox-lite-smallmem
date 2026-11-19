@@ -585,10 +585,20 @@ _manage_service() {
             if [ "$action" == "start" ] || [ "$action" == "restart" ]; then
                 systemctl reset-failed sing-box >/dev/null 2>&1 || true
             fi
-            systemctl "$action" sing-box 8>&- 9>&- 219>&- ;;
+            systemctl "$action" sing-box 8>&- 9>&- 219>&- || return 1
+            if [[ "$action" == start || "$action" == restart ]]; then
+                sleep 1
+                systemctl is-active --quiet sing-box || { _error "sing-box 启动后未保持运行，请检查服务日志。"; return 1; }
+            fi
+            ;;
         openrc)
             if [ "$action" == "status" ]; then rc-service sing-box status; return; fi
-            rc-service sing-box "$action" 8>&- 9>&- 219>&- ;;
+            rc-service sing-box "$action" 8>&- 9>&- 219>&- || return 1
+            if [[ "$action" == start || "$action" == restart ]]; then
+                sleep 1
+                rc-service sing-box status >/dev/null 2>&1 || { _error "sing-box 启动后未保持运行，请检查服务日志。"; return 1; }
+            fi
+            ;;
         direct)
             if ! _prepare_singbox_runtime_pid; then
                 _error "无法准备受保护的运行目录: ${RUNTIME_DIR}"
@@ -4510,7 +4520,7 @@ _create_anytls_tls_node() {
         echo "请选择证书类型:"
         echo "  1) 自动生成自签名证书 (推荐)"
         echo "  2) 手动上传证书文件 (Cloudflare源证书等)"
-        read -p "请选择 [1-2] (默认: 1): " cert_choice
+        read -r -p "请选择 [1-2] (默认: 1): " cert_choice || return 1
         cert_choice=${cert_choice:-1}
     fi
     
@@ -4528,14 +4538,14 @@ _create_anytls_tls_node() {
     else
         # 手动上传证书
         _info "请输入 ${server_name} 对应的证书文件路径。"
-        read -p "请输入证书文件 .pem/.crt 的完整路径: " cert_path
+        read -r -p "请输入证书文件 .pem/.crt 的完整路径: " cert_path || return 1
         [[ ! -f "$cert_path" ]] && _error "证书文件不存在: ${cert_path}" && return 1
         
-        read -p "请输入私钥文件 .key 的完整路径: " key_path
+        read -r -p "请输入私钥文件 .key 的完整路径: " key_path || return 1
         [[ ! -f "$key_path" ]] && _error "私钥文件不存在: ${key_path}" && return 1
         
         # 询问是否跳过验证
-        read -p "$(echo -e ${YELLOW}"您是否正在使用自签名证书或Cloudflare源证书? (y/N): "${NC})" use_self_signed
+        read -r -p "$(echo -e ${YELLOW}"您是否正在使用自签名证书或Cloudflare源证书? (y/N): "${NC})" use_self_signed || return 1
         if [[ "$use_self_signed" == "y" || "$use_self_signed" == "Y" ]]; then
             skip_verify=true
             _warning "已启用 'skip-cert-verify: true'，客户端将跳过证书验证。"
@@ -4731,26 +4741,27 @@ _add_vless_reality() {
         # 批量模式下如果不显式指定，可能丢失 IP，此处进行双重保险
         [ -z "$node_ip" ] && node_ip="$server_ip"
     else
-        read -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip
+        read -r -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip || return 1
         node_ip=${custom_ip:-$server_ip}
-        read -p "请输入伪装域名 (默认: www.amd.com): " camouflage_domain
+        read -r -p "请输入伪装域名 (默认: www.amd.com): " camouflage_domain || return 1
         server_name=${camouflage_domain:-"www.amd.com"}
         while true; do
-            read -p "请输入监听端口: " port
+            read -r -p "请输入监听端口: " port || return 1
             [[ -z "$port" ]] && _error "端口不能为空" && continue
             _check_port_conflict "$port" "tcp" && continue
             break
         done
         local default_name="VLESS-TCP-REALITY-VISION-${port}"
-        read -p "请输入节点名称 (默认: ${default_name}): " custom_name
+        read -r -p "请输入节点名称 (默认: ${default_name}): " custom_name || return 1
         name=${custom_name:-$default_name}
     fi
 
-    local uuid=$(${SINGBOX_BIN} generate uuid)
-    local keypair=$(${SINGBOX_BIN} generate reality-keypair)
+    local uuid keypair short_id
+    uuid=$("${SINGBOX_BIN}" generate uuid) || return 1
+    keypair=$("${SINGBOX_BIN}" generate reality-keypair) || return 1
     local private_key=$(echo "$keypair" | awk '/PrivateKey/ {print $2}')
     local public_key=$(echo "$keypair" | awk '/PublicKey/ {print $2}')
-    local short_id=$(${SINGBOX_BIN} generate rand --hex 8)
+    short_id=$("${SINGBOX_BIN}" generate rand --hex 8) || return 1
     local tag="vless-in-${port}"
     # IPv6处理：YAML用原始IP，链接用带[]的IP
     local yaml_ip="$node_ip"
@@ -5029,15 +5040,15 @@ _add_tuic() {
         port="$BATCH_PORT"
         server_name="${BATCH_SNI:-www.amd.com}"
     else
-        read -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip
+        read -r -p "请输入服务器IP地址 (默认: ${server_ip}): " custom_ip || return 1
         node_ip=${custom_ip:-$server_ip}
         while true; do
-            read -p "请输入监听端口: " port
+            read -r -p "请输入监听端口: " port || return 1
             [[ -z "$port" ]] && _error "端口不能为空" && continue
             _check_port_conflict "$port" "udp" && continue
             break
         done
-        read -p "请输入伪装域名 (默认: www.amd.com): " camouflage_domain
+        read -r -p "请输入伪装域名 (默认: www.amd.com): " camouflage_domain || return 1
         server_name=${camouflage_domain:-"www.amd.com"}
     fi
 
@@ -5047,7 +5058,9 @@ _add_tuic() {
     
     _generate_self_signed_cert "$server_name" "$cert_path" "$key_path" || return 1
 
-    local uuid=$(${SINGBOX_BIN} generate uuid); local password=$(${SINGBOX_BIN} generate rand --hex 16)
+    local uuid password
+    uuid=$("${SINGBOX_BIN}" generate uuid) || return 1
+    password=$("${SINGBOX_BIN}" generate rand --hex 16) || return 1
     
     # [!] 自主生成与名称分配
     local name=""
@@ -5055,7 +5068,7 @@ _add_tuic() {
         name="Batch-TUICv5-${port}"
     else
         local default_name="TUICv5-${port}"
-        read -p "请输入节点名称 (默认: ${default_name}): " custom_name
+        read -r -p "请输入节点名称 (默认: ${default_name}): " custom_name || return 1
         name=${custom_name:-$default_name}
     fi
 
@@ -8288,6 +8301,11 @@ _main_create_tx_restore_file() {
 _main_create_tx_snapshot() {
     local tx_dir="$1" credential credential_name nft_tables
     mkdir -p "${tx_dir}/credentials" || return 1
+    if { [ "$INIT_SYSTEM" = systemd ] && systemctl is-active --quiet sing-box; } \
+        || { [ "$INIT_SYSTEM" = openrc ] && rc-service sing-box status >/dev/null 2>&1; } \
+        || { [ "$INIT_SYSTEM" = direct ] && _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"; }; then
+        : > "${tx_dir}/service-was-running" || return 1
+    fi
 
     _main_create_tx_snapshot_file "$tx_dir" config.json "$CONFIG_FILE" || return 1
     _main_create_tx_snapshot_file "$tx_dir" metadata.json "$METADATA_FILE" || return 1
@@ -8717,7 +8735,7 @@ _show_add_node_menu() {
     echo -e "    ${YELLOW}[0]${NC} 返回主菜单"
     echo ""
     
-    read -p "  请输入选项 [0-3]: " choice
+    read -r -p "  请输入选项 [0-3]: " choice || return 0
 
     case $choice in
         1) _run_main_create_transaction _add_vless_reality ;;

@@ -36,11 +36,13 @@ echo "budget=$GOMEMLIMIT family=$expected_listen" | tee /results/environment.txt
 create_singbox() {
     local operation="$1" port="$2" before after
     before=$(checks sing-box)
+    must python3 tests/cgroup-phase.py begin "create-$operation"
     export BATCH_MODE=true BATCH_IP=127.0.0.1 BATCH_SNI=localhost BATCH_PORT="$port"
     must _run_main_create_transaction "$operation"
     after=$(checks sing-box)
     [[ $((after-before)) == 1 ]] || fail "$operation performed $((after-before)) checks"
     must _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"
+    must python3 tests/cgroup-phase.py end "create-$operation"
 }
 create_singbox _add_vless_reality 21001
 create_singbox _add_anytls 21002
@@ -51,6 +53,7 @@ must jq -e --arg listen "$expected_listen" 'all(.inbounds[]; .listen == $listen)
 # Xray 输入与实际向导顺序一致；端口必须来自提供商分配的范围。
 BATCH_MODE=false
 before=$(checks xray)
+must python3 tests/cgroup-phase.py begin create-xray-reality
 must _run_xray_transaction _add_vless_reality_vision <<'EOF'
 127.0.0.1
 22001
@@ -58,7 +61,9 @@ localhost
 Test-Xray-Reality
 EOF
 [[ $(checks xray) -eq $((before+1)) ]] || fail 'Xray Reality duplicate checks'
+must python3 tests/cgroup-phase.py end create-xray-reality
 before=$(checks xray)
+must python3 tests/cgroup-phase.py begin create-xray-xhttp
 must _run_xray_transaction _add_vless_h2_tls <<'EOF'
 127.0.0.1
 22002
@@ -67,6 +72,7 @@ localhost
 Test-Xray-XHTTP
 EOF
 [[ $(checks xray) -eq $((before+1)) ]] || fail 'Xray XHTTP duplicate checks'
+must python3 tests/cgroup-phase.py end create-xray-xhttp
 must jq -e --arg listen "$expected_listen" '.inbounds|length==2 and all(.[]; .listen==$listen)' "$XRAY_CONFIG"
 must _xray_is_pid_file_running_cmd "$XRAY_PID_FILE" "$XRAY_BIN"
 
@@ -114,10 +120,40 @@ if (
 must _xray_is_pid_file_running_cmd "$XRAY_PID_FILE" "$XRAY_BIN"
 echo 'PASS: Xray partial snapshots and interrupted transactions restore prior state'
 
+# 删除、改端口与创建共用主快照，失败后不能把原来运行的 sing-box 停掉。
+snapshot=$(mktemp -d /tmp/.singbox-shared-rollback.XXXXXX)
+must _main_create_tx_snapshot "$snapshot"
+[[ -f "$snapshot/service-was-running" ]] || fail 'shared snapshot omitted original service state'
+must _main_create_tx_restore "$snapshot" 1
+must _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"
+before_hash=$(sha256sum "$XRAY_CONFIG" | cut -d' ' -f1)
+if _run_xray_transaction _add_vless_reality_vision </dev/null; then fail 'EOF accepted as Reality input'; fi
+if _run_xray_transaction _add_vless_h2_tls </dev/null; then fail 'EOF accepted as XHTTP input'; fi
+[[ "$(sha256sum "$XRAY_CONFIG" | cut -d' ' -f1)" == "$before_hash" ]] || fail 'EOF changed config'
+echo 'PASS: shared service rollback and EOF input preserve original state'
+
+# 在每个输入点关闭 stdin：必须及时退出并保留配置，尤其不能在端口循环里空转。
+before_hash=$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)
+for operation in _add_vless_reality _add_anytls _add_tuic; do
+    case "$operation" in
+        _add_vless_reality) input=$'127.0.0.1\nlocalhost\n21011\nTest\n' ;;
+        _add_anytls) input=$'127.0.0.1\n21012\nlocalhost\npassword\nTest\n1\n' ;;
+        _add_tuic) input=$'127.0.0.1\n21013\nlocalhost\nTest\n' ;;
+    esac
+    count=$(printf '%s' "$input" | wc -l)
+    for ((line=0; line<count; line++)); do
+        printf '%s' "$input" | head -n "$line" > /results/eof-input
+        if _run_main_create_transaction "$operation" < /results/eof-input; then fail "$operation accepted EOF at input $line"; fi
+        [[ "$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)" == "$before_hash" ]] || fail "$operation EOF changed config"
+        must _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"
+    done
+done
+echo 'PASS: all sing-box creation input boundaries exit on EOF without spinning'
+
 # 两个核心同时运行，分别统计空闲 CPU 和 RSS。
-python3 tests/resource-sample.py "$(cat "$PID_FILE")" 12 singbox-idle &
+python3 tests/resource-sample.py "$(cat "$PID_FILE")" 60 singbox-idle 1 &
 sample_sb=$!
-python3 tests/resource-sample.py "$(cat "$XRAY_PID_FILE")" 12 xray-idle &
+python3 tests/resource-sample.py "$(cat "$XRAY_PID_FILE")" 60 xray-idle 1 &
 sample_x=$!
 must wait "$sample_sb"
 must wait "$sample_x"

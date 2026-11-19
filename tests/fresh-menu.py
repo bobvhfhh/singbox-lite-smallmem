@@ -1,4 +1,5 @@
 import os
+import json
 import pty
 import re
 import select
@@ -16,6 +17,21 @@ master, slave = pty.openpty()
 process = subprocess.Popen(['docker', 'exec', '-it', '-e', 'TERM=xterm', container, 'bash', '/work/install.sh', '--source', '/work'], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
 os.close(slave)
 buffer = ''
+
+def cpu_snapshot():
+    text = subprocess.check_output(['docker', 'exec', container, 'cat', '/sys/fs/cgroup/cpu.stat'], text=True)
+    return time.monotonic(), int(dict(line.split() for line in text.splitlines())['usage_usec'])
+
+def finish_phase(name, before):
+    now, usage = cpu_snapshot()
+    elapsed = now - before[0]
+    cpu_seconds = (usage - before[1]) / 1e6
+    row = dict(phase=name, seconds=round(elapsed, 3), container_cpu_seconds=round(cpu_seconds, 3),
+               container_cpu_percent=round(cpu_seconds / elapsed * 100, 3))
+    with (out / f'{core}-phases.jsonl').open('a') as output:
+        output.write(json.dumps(row) + '\n')
+
+phase_started = cpu_snapshot()
 
 def expect(pattern, timeout=240):
     global buffer
@@ -44,6 +60,8 @@ def send(value):
 
 try:
     expect(r'请输入选项 \[0-19\]:')
+    finish_phase('installer-and-first-menu', phase_started)
+    phase_started = cpu_snapshot()
     if core == 'singbox':
         send('15')
         expect(r'请选择 \[0-2\]:')
@@ -51,7 +69,9 @@ try:
         expect(r'按任意键返回主菜单', 360)
         os.write(master, b'x')
         expect(r'请输入选项 \[0-19\]:')
+        finish_phase('install-singbox-core', phase_started)
         for choice, port in [('1', '21001'), ('2', '21002'), ('3', '21003')]:
+            phase_started = cpu_snapshot()
             send('1')
             expect(r'请输入选项 \[0-3\]:')
             send(choice)
@@ -76,14 +96,17 @@ try:
             expect(r'按任意键返回主菜单', 120)
             os.write(master, b'x')
             expect(r'请输入选项 \[0-19\]:')
+            finish_phase(f'create-singbox-{choice}', phase_started)
     else:
         send('16')
         expect(r'按任意键返回主菜单', 360)
         os.write(master, b'x')
         expect(r'请输入选项 \[0-19\]:')
+        finish_phase('install-xray-core', phase_started)
         send('19')
         expect(r'请选择 \[0-99\]:', 120)
         for choice, port in [('1', '22001'), ('2', '22002')]:
+            phase_started = cpu_snapshot()
             send('6')
             expect(r'请选择 \[0-2\]:')
             send(choice)
@@ -103,6 +126,7 @@ try:
             expect(r'请选择 \[0-2\]:')
             send('0')
             expect(r'请选择 \[0-99\]:')
+            finish_phase(f'create-xray-{choice}', phase_started)
         send('0')
         expect(r'按任意键返回主菜单')
         os.write(master, b'x')
@@ -118,7 +142,9 @@ try:
     else:
         subprocess.run(['docker', 'exec', container, 'jq', '-e', '.inbounds|length==2', '/usr/local/etc/xray/config.json'], check=True)
         subprocess.run(['docker', 'exec', container, 'bash', '-c', 'kill -0 "$(cat /run/singboxlite/xray.pid)"'], check=True)
+    phase_started = cpu_snapshot()
     subprocess.run(['docker', 'exec', '-i', container, 'sb'], input=b'0\n', timeout=90, stdout=subprocess.DEVNULL, check=True)
+    finish_phase('repeat-menu-launch-and-exit', phase_started)
     print(f'PASS: clean {core} installation through real installer and menus')
 finally:
     if process.poll() is None:

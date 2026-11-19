@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from resource_metrics import ProcessSampler, write_result
 
 sb_dir = Path('/usr/local/etc/sing-box')
 x_dir = Path('/usr/local/etc/xray')
@@ -16,7 +17,10 @@ sb_meta = json.loads((sb_dir/'metadata.json').read_text())
 x_meta = json.loads((x_dir/'metadata.json').read_text())
 clients = Path('/opt/test-clients')
 clients.mkdir(exist_ok=True)
-payload = b'smallmem-verified' * 16384
+payload = hashlib.sha256(b'smallmem-verified').digest() * 8192  # 每次 256KiB
+duration = 30
+target_rate = 1024 * 1024
+request_interval = len(payload) / target_rate
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -69,21 +73,31 @@ try:
                 time.sleep(1)
                 if client.poll() is not None:
                     raise RuntimeError(f'{name}: client exited; {(clients/f"{name}.log").read_text()}')
-                sampler = subprocess.Popen(['python3', '/work/tests/resource-sample.py', str(pid), '5', f'{name}-traffic'])
+                sampler = ProcessSampler(pid, f'{name}-traffic').start()
                 transferred = 0
                 start = time.monotonic()
                 requests = 0
-                while time.monotonic() - start < 5:
-                    result = subprocess.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '8', '--limit-rate', '1M', '--noproxy', '', '--socks5-hostname', '127.0.0.1:23001', 'http://127.0.0.1:28080/payload'], capture_output=True)
+                while time.monotonic() - start < duration:
+                    result = subprocess.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '8', '--noproxy', '', '--socks5-hostname', '127.0.0.1:23001', 'http://127.0.0.1:28080/payload'], capture_output=True)
                     if result.returncode or result.stdout != payload:
                         raise RuntimeError(f'{name}: transfer failed: {result.stderr.decode()} {(clients/f"{name}.log").read_text()}')
                     transferred += len(result.stdout)
                     requests += 1
-                if sampler.wait() != 0:
-                    raise RuntimeError(f'{name}: resource sample failed')
-                row = dict(protocol=name, requests=requests, bytes=transferred, seconds=round(time.monotonic()-start, 2))
-                with open('/results/traffic.jsonl', 'a') as out:
-                    out.write(json.dumps(row) + chr(10))
+                    # 按完成的字节数定时，不能靠 curl 对小响应的限速选项模拟定速负载。
+                    next_request = min(start + requests * request_interval, start + duration)
+                    time.sleep(max(0, next_request - time.monotonic()))
+                elapsed = time.monotonic() - start
+                resources = sampler.finish()
+                write_result('resources.jsonl', resources)
+                rate = transferred / elapsed / (1024 * 1024)
+                row = dict(protocol=name, requests=requests, bytes=transferred,
+                           seconds=round(elapsed, 3), target_mib_s=1, actual_mib_s=round(rate, 3),
+                           server_cpu_percent=resources['cpu_percent'])
+                write_result('traffic.jsonl', row)
+                if not 0.9 <= rate <= 1.05:
+                    raise RuntimeError(f'{name}: fixed-rate load missed target: {rate:.3f} MiB/s')
+                if resources['cpu_percent'] > 20:
+                    raise RuntimeError(f'{name}: server CPU exceeds 20% of one core at 1MiB/s')
                 print(f'PASS: {name}, {transferred} bytes verified')
             finally:
                 client.terminate()

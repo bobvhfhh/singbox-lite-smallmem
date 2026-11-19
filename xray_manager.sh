@@ -726,7 +726,7 @@ _create_xray_service() {
 _validate_xray_config() {
     [ -f "$XRAY_CONFIG" ] || { _error "Xray 配置不存在。"; return 1; }
     jq empty "$XRAY_CONFIG" >/dev/null 2>&1 || { _error "Xray 配置不是有效 JSON。"; return 1; }
-    [ -x "$XRAY_BIN" ] || return 0
+    [ -x "$XRAY_BIN" ] || { _error "Xray 核心不存在或不可执行。"; return 1; }
     env GOMEMLIMIT="$(_xray_get_mem_limit)MiB" GOGC=100 GOMAXPROCS=1 \
         "$XRAY_BIN" run -test -config "$XRAY_CONFIG" >/dev/null 2>&1 || {
         _error "Xray 配置校验失败。"
@@ -746,8 +746,16 @@ _manage_xray_service() {
             systemctl reset-failed xray >/dev/null 2>&1 || true
         fi
         systemctl "$action" xray 2>/dev/null 8>&- 9>&- 219>&- || rc=$?
+        if [ "$rc" -eq 0 ] && [[ "$action" == start || "$action" == restart ]]; then
+            sleep 1
+            systemctl is-active --quiet xray || rc=1
+        fi
     elif [ "$INIT_SYSTEM" == "openrc" ]; then
         rc-service xray "$action" 2>/dev/null 8>&- 9>&- 219>&- || rc=$?
+        if [ "$rc" -eq 0 ] && [[ "$action" == start || "$action" == restart ]]; then
+            sleep 1
+            rc-service xray status >/dev/null 2>&1 || rc=1
+        fi
     elif [ "$INIT_SYSTEM" == "direct" ]; then
         local pid_file="$XRAY_PID_FILE"
         local log_file="/var/log/xray.log"
@@ -1123,20 +1131,22 @@ _add_vless_reality_vision() {
     [ -z "$server_ip" ] && server_ip=$(_get_public_ip)
     local node_ip="$server_ip"
     
-    read -p "请输入服务器IP (默认: ${server_ip}): " custom_ip
+    read -r -p "请输入服务器IP (默认: ${server_ip}): " custom_ip || return 1
     node_ip=${custom_ip:-$server_ip}
     
-    local port=$(_input_port)
+    local port
+    port=$(_input_port) || return 1
     local sni="www.amd.com"
-    read -p "请输入伪装域名 SNI (默认: www.amd.com): " custom_sni
+    read -r -p "请输入伪装域名 SNI (默认: www.amd.com): " custom_sni || return 1
     sni=${custom_sni:-www.amd.com}
     
     local default_name="X-VLESS-TCP-REALITY-VISION-${port}"
-    read -p "请输入节点名称 (默认: ${default_name}): " custom_name
+    read -r -p "请输入节点名称 (默认: ${default_name}): " custom_name || return 1
     local name=${custom_name:-$default_name}
     
     # 生成凭证
-    local uuid=$($XRAY_BIN uuid)
+    local uuid
+    uuid=$("$XRAY_BIN" uuid) || return 1
     local flow="xtls-rprx-vision"
     _generate_reality_keys || return 1
     local tag="xray-vless-reality-${port}"
@@ -1574,23 +1584,25 @@ _add_vless_h2_tls() {
     [ -z "$server_ip" ] && server_ip=$(_get_public_ip)
     local node_ip="$server_ip"
     
-    read -p "请输入服务器IP (默认: ${server_ip}): " custom_ip
+    read -r -p "请输入服务器IP (默认: ${server_ip}): " custom_ip || return 1
     node_ip=${custom_ip:-$server_ip}
     
-    local port=$(_input_port)
+    local port
+    port=$(_input_port) || return 1
     local sni="www.amd.com"
-    read -p "请输入域名 (CF回源填绑定域名, 直连回车默认: www.amd.com): " custom_sni
+    read -r -p "请输入域名 (CF回源填绑定域名, 直连回车默认: www.amd.com): " custom_sni || return 1
     sni=${custom_sni:-www.amd.com}
     
     local path="/$(openssl rand -hex 6)"
-    read -p "请输入 H2 路径 (默认: ${path}): " custom_path
+    read -r -p "请输入 H2 路径 (默认: ${path}): " custom_path || return 1
     path=${custom_path:-$path}
     
     local default_name="X-VLESS-H2-${port}"
-    read -p "请输入节点名称 (默认: ${default_name}): " custom_name
+    read -r -p "请输入节点名称 (默认: ${default_name}): " custom_name || return 1
     local name=${custom_name:-$default_name}
     
-    local uuid=$($XRAY_BIN uuid)
+    local uuid
+    uuid=$("$XRAY_BIN" uuid) || return 1
     local tag="xray-vless-h2-${port}"
     local cert_path="${XRAY_DIR}/${tag}.pem"
     local key_path="${XRAY_DIR}/${tag}.key"

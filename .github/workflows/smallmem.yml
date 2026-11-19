@@ -18,6 +18,8 @@ jobs:
         run: docker run -d --name smallmem --memory=${{ matrix.memory }} --memory-swap=${{ matrix.memory }} --cpus=0.5 --sysctl net.ipv6.conf.all.disable_ipv6=${{ matrix.ipv4_only }} -e IPV4_ONLY=${{ matrix.ipv4_only }} -v "$PWD:/work:ro" smallmem-test
       - name: Install, create five protocols, rollback and transfer
         run: docker exec smallmem bash /work/tests/integration.sh
+      - name: Service early-exit regression
+        run: docker exec smallmem bash /work/tests/service-failure.sh
       - name: Collect measurements
         if: always()
         run: |
