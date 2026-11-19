@@ -36,7 +36,10 @@ must _modify_port vless-in-21001 <<<'21011'
 [[ $(checks sing-box) -eq $((before+1)) ]] || fail 'sing-box port edit duplicate checks'
 must jq -e '.inbounds[]|select(.tag=="vless-in-21011")|.listen_port==21011' "$CONFIG_FILE"
 before_hash=$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)
-if modify_singbox vless-in-21011 auth invalid-uuid; then fail 'invalid UUID committed'; fi
+if (
+    _check_combined_config_files() { echo 'injected core validation failure' >&2; return 1; }
+    modify_singbox vless-in-21011 auth test-auth-rollback
+); then fail 'failed core validation committed'; fi
 [[ $(sha256sum "$CONFIG_FILE" | cut -d' ' -f1) == "$before_hash" ]] || fail 'sing-box failed auth edit did not restore config'
 must _is_pid_file_running_cmd "$PID_FILE" "$SINGBOX_BIN"
 before=$(checks sing-box)

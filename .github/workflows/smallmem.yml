@@ -36,3 +36,11 @@ jobs:
         with:
           name: results-${{ matrix.memory }}-ipv4-${{ matrix.ipv4_only }}
           path: test-results
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f tests/Dockerfile -t smallmem-test .
+      - run: docker run -d --name smallmem --memory=128m --memory-swap=128m --cpus=0.5 --sysctl net.ipv6.conf.all.disable_ipv6=1 -e IPV4_ONLY=1 -v "$PWD:/work:ro" smallmem-test
+      - run: docker exec smallmem bash /work/tests/integration.sh --setup-only
+      - run: docker exec smallmem bash /work/tests/maintenance.sh
