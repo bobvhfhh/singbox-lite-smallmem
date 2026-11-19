@@ -26,6 +26,7 @@ jobs:
           docker inspect --format '{{json .State}}' smallmem > test-results/container-state.json
           docker exec smallmem tail -30 /var/log/sing-box.log > test-results/singbox.log || true
           docker exec smallmem tail -30 /var/log/xray.log > test-results/xray.log || true
+          docker cp smallmem:/opt/test-clients test-results/clients || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

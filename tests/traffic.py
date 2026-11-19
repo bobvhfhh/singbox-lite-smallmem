@@ -29,7 +29,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 server = http.server.ThreadingHTTPServer(('127.0.0.1', 28080), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
-target = subprocess.Popen(['openssl', 's_server', '-accept', '443', '-cert', str(sb_dir/'anytls-in-21002.pem'), '-key', str(sb_dir/'anytls-in-21002.key'), '-tls1_3', '-alpn', 'h2', '-www'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+target_log = open('/results/tls-target.log', 'w')
+target = subprocess.Popen(['openssl', 's_server', '-accept', '443', '-cert', str(sb_dir/'anytls-in-21002.pem'), '-key', str(sb_dir/'anytls-in-21002.key'), '-tls1_3', '-groups', 'X25519', '-alpn', 'h2', '-www'], stdout=target_log, stderr=target_log)
 env = dict(os.environ, GOGC='100', GOMAXPROCS='1', GOMEMLIMIT='40MiB')
 cases = []
 for inbound in sb['inbounds']:
@@ -47,9 +48,8 @@ for inbound in xray['inbounds']:
     stream = inbound['streamSettings']
     if stream['security'] == 'reality':
         meta = x_meta[inbound['tag']]
-        outbound = dict(type='vless', tag='proxy', server='127.0.0.1', server_port=inbound['port'], uuid=inbound['settings']['clients'][0]['id'], flow='xtls-rprx-vision', tls=dict(enabled=True, server_name='localhost', utls=dict(enabled=True, fingerprint='chrome'), reality=dict(enabled=True, public_key=meta['publicKey'], short_id=meta['shortId'])))
-        config = dict(log=dict(level='error'), inbounds=[dict(type='socks', listen='127.0.0.1', listen_port=23001)], outbounds=[outbound])
-        binary = '/opt/cores/sing-box'
+        config = dict(log=dict(loglevel='debug'), inbounds=[dict(listen='127.0.0.1', port=23001, protocol='socks', settings=dict(auth='noauth'))], outbounds=[dict(protocol='vless', settings=dict(vnext=[dict(address='127.0.0.1', port=inbound['port'], users=[dict(id=inbound['settings']['clients'][0]['id'], encryption='none', flow='xtls-rprx-vision')])]), streamSettings=dict(network='tcp', security='reality', realitySettings=dict(show=True, serverName='localhost', fingerprint='chrome', password=meta['publicKey'], shortId=meta['shortId'])))])
+        binary = '/opt/cores/xray'
         name = 'xray-reality'
     else:
         cert_path = stream['tlsSettings']['certificates'][0]['certificateFile']
@@ -90,3 +90,4 @@ finally:
     target.terminate()
     target.wait(timeout=5)
     server.shutdown()
+    target_log.close()
