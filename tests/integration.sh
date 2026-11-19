@@ -25,6 +25,8 @@ must _initialize_config_files
 # 测试固定本地目标，避免把公网 TLS 可达性混入内存和转发测试。
 must _atomic_modify_json "$CONFIG_FILE" '.ntp.enabled=false'
 must _init_xray_config
+# Xray 的默认入站策略阻止代理访问私网；仅测试夹具允许本地 HTTP 目标。
+must _xray_atomic_modify_json "$XRAY_CONFIG" '(.outbounds[] | select(.tag=="direct") | .settings.finalRules)=[{action:"allow",network:"tcp",port:28080,ip:["127.0.0.1/32"]}]'
 expected_listen=::
 [[ "${IPV4_ONLY:-0}" == 1 ]] && expected_listen=0.0.0.0
 [[ "$(_node_listen_address)" == "$expected_listen" ]] || fail 'wrong listener family'
@@ -95,10 +97,12 @@ python3 tests/resource-sample.py "$(cat "$XRAY_PID_FILE")" 12 xray-idle &
 sample_x=$!
 must wait "$sample_sb"
 must wait "$sample_x"
-must python3 tests/traffic.py
+traffic_result=0
+python3 tests/traffic.py || traffic_result=$?
 cat /sys/fs/cgroup/memory.events | tee /results/memory.events
 cat /sys/fs/cgroup/memory.peak | tee /results/memory.peak
 must awk '$1=="oom" || $1=="oom_kill" {if($2 != 0) exit 1}' /sys/fs/cgroup/memory.events
 must _manage_service stop
 must _manage_xray_service stop
+[[ "$traffic_result" == 0 ]] || fail 'protocol traffic test failed'
 echo 'PASS: installer, five protocol creators, single checks, rollback, idle sampling, real traffic, no OOM'

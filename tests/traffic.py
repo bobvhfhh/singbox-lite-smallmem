@@ -72,14 +72,16 @@ try:
                 sampler = subprocess.Popen(['python3', '/work/tests/resource-sample.py', str(pid), '5', f'{name}-traffic'])
                 transferred = 0
                 start = time.monotonic()
-                for _ in range(12):
-                    result = subprocess.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '8', '--noproxy', '', '--socks5-hostname', '127.0.0.1:23001', 'http://127.0.0.1:28080/payload'], capture_output=True)
+                requests = 0
+                while time.monotonic() - start < 5:
+                    result = subprocess.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '8', '--limit-rate', '1M', '--noproxy', '', '--socks5-hostname', '127.0.0.1:23001', 'http://127.0.0.1:28080/payload'], capture_output=True)
                     if result.returncode or result.stdout != payload:
                         raise RuntimeError(f'{name}: transfer failed: {result.stderr.decode()} {(clients/f"{name}.log").read_text()}')
                     transferred += len(result.stdout)
+                    requests += 1
                 if sampler.wait() != 0:
                     raise RuntimeError(f'{name}: resource sample failed')
-                row = dict(protocol=name, requests=12, bytes=transferred, seconds=round(time.monotonic()-start, 2))
+                row = dict(protocol=name, requests=requests, bytes=transferred, seconds=round(time.monotonic()-start, 2))
                 with open('/results/traffic.jsonl', 'a') as out:
                     out.write(json.dumps(row) + chr(10))
                 print(f'PASS: {name}, {transferred} bytes verified')

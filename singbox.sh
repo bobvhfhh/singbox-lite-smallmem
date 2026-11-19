@@ -3436,6 +3436,10 @@ _initialize_config_files() {
         # 初始化包含完整 dns 配置和路由策略的基础文件，以支持中转第三方域名节点
         cat > "$CONFIG_FILE" << 'EOF'
 {
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
   "ntp": {
     "enabled": true,
     "server": "time.apple.com",
@@ -8758,6 +8762,10 @@ main() {
         
         # 3.2 [关键修复] 清理主配置文件中的旧版残留
         local config_updated=false
+        if ! jq -e '.log.level != null or .log.disabled == true' "$CONFIG_FILE" >/dev/null 2>&1; then
+            _atomic_modify_json "$CONFIG_FILE" '.log = ((.log // {}) + {level:"warn",timestamp:true})' || return 1
+            config_updated=true
+        fi
         if _cleanup_legacy_config; then
             config_updated=true
         fi
