@@ -1,0 +1,14 @@
+{
+  "run": "https://github.com/bobvhfhh/singbox-lite-smallmem/actions/runs/44542653777",
+  "tested_commit": "ef8e488",
+  "singbox": "1.13.21",
+  "xray": "26.11.9",
+  "cpu_limit": 0.5,
+  "swap": false,
+  "cases": [
+    {"memory_mib":128,"ipv4_only":false,"go_budget_mib":40,"singbox_idle_rss_mib":41.14,"xray_idle_rss_mib":32.88,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.187,"container_peak_mib":69.66,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
+    {"memory_mib":128,"ipv4_only":true,"go_budget_mib":40,"singbox_idle_rss_mib":42.06,"xray_idle_rss_mib":32.71,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.535,"container_peak_mib":68.01,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
+    {"memory_mib":256,"ipv4_only":false,"go_budget_mib":64,"singbox_idle_rss_mib":41.11,"xray_idle_rss_mib":32.59,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":7.991,"container_peak_mib":68.35,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
+    {"memory_mib":256,"ipv4_only":true,"go_budget_mib":64,"singbox_idle_rss_mib":41.1,"xray_idle_rss_mib":32.91,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.19,"container_peak_mib":68.56,"oom":0,"oom_kill":0,"all_five_protocols_pass":true}
+  ]
+}

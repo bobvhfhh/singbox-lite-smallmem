@@ -23,6 +23,7 @@ while time.monotonic() - start < duration:
     time.sleep(0.25)
 elapsed = time.monotonic() - start
 cpu, rss = read()
+peak = max(peak, rss)
 row = dict(name=name, seconds=round(elapsed, 2), rss_mib=round(rss/1024, 2), peak_rss_mib=round(peak/1024, 2), cpu_percent=round((cpu-start_cpu)/ticks/elapsed*100, 3))
 print(json.dumps(row))
 with open('/results/resources.jsonl', 'a') as out:

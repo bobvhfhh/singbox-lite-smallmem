@@ -8805,7 +8805,7 @@ main() {
                 _warn "检测到旧版 OpenRC PID 路径，正在迁移到 ${PID_FILE}..."
                 need_update=true
             fi
-            if ! grep -Fq 'GOGC=100' "$SERVICE_FILE" || ! grep -Fq 'GOMAXPROCS=1' "$SERVICE_FILE" || ! grep -Fq "GOMEMLIMIT=$(_get_mem_limit)MiB" "$SERVICE_FILE"; then
+            if ! grep -Fq 'GOGC=100' "$SERVICE_FILE" || ! grep -Fq 'GOMAXPROCS=1' "$SERVICE_FILE" || ! grep -Eq "GOMEMLIMIT=\"?$(_get_mem_limit)MiB" "$SERVICE_FILE"; then
                 _info "正在应用小内存核心运行参数..."
                 need_update=true
             fi
