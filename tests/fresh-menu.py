@@ -83,6 +83,26 @@ try:
         expect(r'请输入选项 \[0-19\]:')
         send('19')
         expect(r'请选择 \[0-99\]:', 120)
+        for choice, port in [('1', '22001'), ('2', '22002')]:
+            send('6')
+            expect(r'请选择 \[0-2\]:')
+            send(choice)
+            expect(r'请输入服务器IP.*:')
+            send('127.0.0.1')
+            expect(r'请输入监听端口:')
+            send(port)
+            expect(r'请输入.*(SNI|域名).*:')
+            send('www.amd.com' if choice == '1' else 'localhost')
+            if choice == '2':
+                expect(r'请输入 H2 路径.*:')
+                send('/smallmem')
+            expect(r'请输入节点名称.*:')
+            send('')
+            expect(r'按回车键继续', 120)
+            send('')
+            expect(r'请选择 \[0-2\]:')
+            send('0')
+            expect(r'请选择 \[0-99\]:')
         send('0')
         expect(r'按任意键返回主菜单')
         os.write(master, b'x')
@@ -95,6 +115,10 @@ try:
     if core == 'singbox':
         subprocess.run(['docker', 'exec', container, 'jq', '-e', '.inbounds|length==3', '/usr/local/etc/sing-box/config.json'], check=True)
         subprocess.run(['docker', 'exec', container, 'bash', '-c', 'kill -0 "$(cat /run/singboxlite/sing-box.pid)"'], check=True)
+    else:
+        subprocess.run(['docker', 'exec', container, 'jq', '-e', '.inbounds|length==2', '/usr/local/etc/xray/config.json'], check=True)
+        subprocess.run(['docker', 'exec', container, 'bash', '-c', 'kill -0 "$(cat /run/singboxlite/xray.pid)"'], check=True)
+    subprocess.run(['docker', 'exec', '-i', container, 'sb'], input=b'0\n', timeout=90, stdout=subprocess.DEVNULL, check=True)
     print(f'PASS: clean {core} installation through real installer and menus')
 finally:
     if process.poll() is None:

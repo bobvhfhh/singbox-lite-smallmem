@@ -200,7 +200,7 @@ if ! declare -f _pkg_install >/dev/null 2>&1; then
             if [ ! -d "/var/lib/apt/lists" ] || [ "$(ls -A /var/lib/apt/lists/ 2>/dev/null | wc -l)" -le 1 ]; then
                 apt-get update -qq >/dev/null 2>&1
             fi
-            if [ -f /run/.containerenv ] || grep -qaE 'libpod|podman' /proc/1/cgroup /proc/1/environ 2>/dev/null; then
+            if [ "${SMALLMEM_MODE:-1}" = "1" ] || [ -f /run/.containerenv ] || grep -qaE 'libpod|podman' /proc/1/cgroup /proc/1/environ 2>/dev/null; then
                 local pkg
                 for pkg in $pkgs; do
                     if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then

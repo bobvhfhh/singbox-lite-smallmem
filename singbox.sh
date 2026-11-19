@@ -670,7 +670,7 @@ _pkg_install() {
         # 128M Podman 中一次解析/解包整批依赖会把 apt 推到 cgroup 上限，常见结果是
         # 第一次 apt-get 被 OOM kill、第二次依靠部分安装状态侥幸成功。容器内改为逐包、
         # 禁用 recommends 和 dpkg PTY，主动压低峰值内存；普通 LXC/KVM 仍保留批量安装。
-        if _is_podman_environment; then
+        if [ "${SMALLMEM_MODE:-0}" = "1" ] || _is_podman_environment; then
             local pkg
             for pkg in $pkgs; do
                 if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
@@ -1395,7 +1395,7 @@ _install_dependencies() {
                 missing_cached="$missing_cached $cmd"
             fi
         done
-        if ! command -v nft &>/dev/null; then
+        if [ "${SMALLMEM_MODE:-0}" != "1" ] && ! command -v nft &>/dev/null; then
             missing_cached="$missing_cached nftables"
         fi
         if [ -z "$missing_cached" ] && [ -x "$YQ_BINARY" ]; then
@@ -1411,9 +1411,12 @@ _install_dependencies() {
     local core_pkgs="bash curl jq openssl wget tar unzip ca-certificates ${lock_pkg}"
     # 可选依赖：部分功能需要，即使装失败也不致命
     local optional_pkgs="procps nftables socat iproute2 cron lsof"
+    if [ "${SMALLMEM_MODE:-0}" = "1" ]; then
+        optional_pkgs=""
+    fi
 
     # 容器类型不能代替权限探测；Podman 仍尝试提供 nft 命令，实际写入能力由子菜单探测。
-    if _is_podman_environment; then
+    if [ "${SMALLMEM_MODE:-0}" != "1" ] && _is_podman_environment; then
         optional_pkgs="nftables"
     fi
     
@@ -1425,7 +1428,7 @@ _install_dependencies() {
     fi
 
     _info "正在安装核心依赖..."
-    _pkg_install $core_pkgs
+    _pkg_install $core_pkgs || return 1
     if ! command -v flock &>/dev/null; then
         # Alpine 版本间拆包名称有差异；其余发行版均由 util-linux 提供。
         _pkg_install util-linux 2>/dev/null || true
@@ -1442,10 +1445,10 @@ _install_dependencies() {
         }
     fi
     
-    _install_yq
+    _install_yq || return 1
 
     # Alpine 上优先启用 OpenRC 服务；无 OpenRC PID 1 的容器回退直接启动 crond。
-    if command -v apk &>/dev/null; then
+    if [ "${SMALLMEM_MODE:-0}" != "1" ] && command -v apk &>/dev/null; then
         if command -v rc-service &>/dev/null && rc-service dcron start >/dev/null 2>&1; then
             rc-update add dcron default >/dev/null 2>&1 || true
         fi
@@ -1497,10 +1500,12 @@ _install_menu_dependencies() {
     for cmd in bash jq curl wget openssl tar unzip flock timeout; do
         command -v "$cmd" >/dev/null 2>&1 || { _error "缺少菜单依赖: $cmd"; return 1; }
     done
-    command -v nft >/dev/null 2>&1 || _pkg_install nftables >/dev/null 2>&1 || true
     command -v ss >/dev/null 2>&1 || _pkg_install iproute2 >/dev/null 2>&1 || true
-    command -v crontab >/dev/null 2>&1 || _pkg_install "$cron_pkg" >/dev/null 2>&1 || true
-    if command -v apk >/dev/null 2>&1 && command -v crond >/dev/null 2>&1; then
+    if [ "${SMALLMEM_MODE:-0}" != "1" ]; then
+        command -v nft >/dev/null 2>&1 || _pkg_install nftables >/dev/null 2>&1 || true
+        command -v crontab >/dev/null 2>&1 || _pkg_install "$cron_pkg" >/dev/null 2>&1 || true
+    fi
+    if [ "${SMALLMEM_MODE:-0}" != "1" ] && command -v apk >/dev/null 2>&1 && command -v crond >/dev/null 2>&1; then
         if command -v rc-service >/dev/null 2>&1; then
             rc-service dcron start >/dev/null 2>&1 || true
             rc-update add dcron default >/dev/null 2>&1 || true
@@ -7493,7 +7498,7 @@ _do_update_singbox() {
     _info "--- 安装/更新 Sing-box 核心 ---"
     # 更新核心时复用已验证的依赖缓存，避免在 128M 容器中再次触发 apk
     # 的高峰内存占用；缓存缺项时 _install_dependencies 仍会自愈安装。
-    _install_dependencies
+    _install_dependencies || return 1
     if ! _install_sing_box "$install_target"; then
         _error "Sing-box 核心安装/更新失败。"
         return 1
@@ -8741,7 +8746,7 @@ main() {
     
     # 1. 首次安装或依赖状态失效时才完整检查，避免每次 sb 进入菜单都触发包管理器
     if [ -x "$SINGBOX_BIN" ]; then
-        _install_dependencies
+        _install_dependencies || return 1
     else
         _install_menu_dependencies || return 1
     fi
