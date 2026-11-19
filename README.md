@@ -14,25 +14,29 @@
 复制这一行到服务器执行。它会下载安装器、安装四个脚本、创建与原项目相同的 `/usr/local/bin/sb` 命令，并直接打开管理菜单：
 
 ```bash
-(curl -LfsS https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -o /tmp/sb-lite-install || wget -q https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -O /tmp/sb-lite-install) && sudo bash /tmp/sb-lite-install
+(curl -LfsS https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -o /tmp/sb-lite-install || wget -q https://raw.githubusercontent.com/bobvhfhh/singbox-lite-smallmem/main/install.sh -O /tmp/sb-lite-install) && bash /tmp/sb-lite-install
 ```
 
-安装器会检查脚本语法，把运行脚本放在 `/usr/local/lib/singbox-lite-smallmem`。再次执行同一命令即可更新。需要 `bash`、`curl` 或 `wget` 和 `sudo`。现有配置保留在 `/usr/local/etc/sing-box/` 与 `/usr/local/etc/xray/`。
+使用 root 账号可直接执行，无需安装 `sudo`。普通用户执行时会自动调用 `sudo`；如果机器没有 `sudo`，先运行 `su -` 切换到 root，再执行上面的命令。需要 `bash` 和 `curl` / `wget` 中的任意一个下载工具。
+
+安装器会检查脚本语法，把运行脚本放在 `/usr/local/lib/singbox-lite-smallmem`。再次执行同一命令即可更新。现有配置保留在 `/usr/local/etc/sing-box/` 与 `/usr/local/etc/xray/`。
 
 ## 运行与更新
 
-安装器每次运行都会打开管理菜单。安装后也可随时使用原项目同名命令启动：
+安装器每次运行都会打开管理菜单。安装后，root 账号直接运行：
 
 ```bash
-sudo sb
+sb
 ```
+
+普通用户使用 `sudo sb`；未安装 `sudo` 时，先用 `su -` 切换 root 再运行 `sb`。
 
 重新运行上面的一键安装命令即可更新。也可以更新本地克隆版：
 
 ```bash
 cd singbox-lite-smallmem
 git pull --ff-only
-sudo bash install.sh --source "$PWD"
+bash install.sh --source "$PWD"
 ```
 
 精简版主菜单的 `[13]` 在线脚本更新已停用，避免上游整组更新恢复完整节点菜单；请用以上安装命令更新配套文件。

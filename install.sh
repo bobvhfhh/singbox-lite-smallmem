@@ -6,7 +6,6 @@ readonly REPO="bobvhfhh/singbox-lite-smallmem"
 branch="main"
 install_dir="/usr/local/lib/singbox-lite-smallmem"
 bin_path="/usr/local/bin/sb"
-readonly FILES=(singbox.sh xray_manager.sh advanced_relay.sh parser.sh install.sh)
 readonly RUNTIME_FILES=(singbox.sh xray_manager.sh advanced_relay.sh parser.sh)
 
 info() { printf '[info] %s\n' "$*" >&2; }
@@ -15,18 +14,22 @@ error() { printf '[error] %s\n' "$*" >&2; }
 usage() {
     cat <<'EOF'
 Usage:
-  sudo bash install.sh [--source DIR] [--branch NAME] [--install-dir DIR] [--bin PATH]
+  bash install.sh [--source DIR] [--branch NAME] [--install-dir DIR] [--bin PATH]
+
+Run directly as root; other users are elevated with sudo automatically.
 
 Options:
   --source DIR       Install from a local checkout instead of GitHub
   --branch NAME      GitHub branch to install (default: main)
   --install-dir DIR  Script installation directory
   --bin PATH         Launcher path (default: /usr/local/bin/sb)
+  --install-only     Install without opening the management menu
   -h, --help         Show this help
 EOF
 }
 
 source_dir=""
+original_args=("$@")
 temp_source_dir=""
 stage_dir=""
 installed_files=()
@@ -100,9 +103,17 @@ while (($#)); do
     esac
 done
 
+if [[ "$(id -u)" -ne 0 ]]; then
+    command -v sudo >/dev/null 2>&1 || {
+        error "当前不是 root，且未安装 sudo。请先运行 su - 切换到 root，再执行安装命令。"
+        exit 1
+    }
+    exec sudo bash "${BASH_SOURCE[0]}" "${original_args[@]}"
+fi
+
 if [[ -n "$source_dir" ]]; then
     source_dir="$(cd -- "$source_dir" && pwd -P)"
-    for file in "${FILES[@]}"; do
+    for file in "${RUNTIME_FILES[@]}"; do
         [[ -s "${source_dir}/${file}" ]] || { error "missing source file: ${source_dir}/${file}"; exit 1; }
     done
 else
@@ -125,25 +136,12 @@ else
             wget -q "$download_url" -O "${source_dir}/${file}" || rm -f -- "${source_dir}/${file}"
         fi
         [[ -s "${source_dir}/${file}" ]] || { error "download failed for ${file}"; exit 1; }
-        [[ -s "${source_dir}/${file}" ]] || { error "downloaded file is empty: ${file}"; exit 1; }
-        bash -n "${source_dir}/${file}" || { error "Bash syntax check failed: ${file}"; exit 1; }
     done
-    chmod 0755 "$source_dir"
-    chmod 0644 "${source_dir}/"*
 fi
 
 for file in "${RUNTIME_FILES[@]}"; do
     bash -n "${source_dir}/${file}" || { error "Bash syntax check failed: ${file}"; exit 1; }
 done
-
-if [[ "${EUID}" -ne 0 ]]; then
-    command -v sudo >/dev/null 2>&1 || { error "sudo is required to install into ${install_dir}"; exit 1; }
-    sudo bash "${source_dir}/install.sh" --source "$source_dir" --install-dir "$install_dir" --bin "$bin_path" --install-only
-    install_rc=$?
-    [[ "$install_rc" -eq 0 ]] || exit "$install_rc"
-    sudo "$bin_path"
-    exit $?
-fi
 
 install -d -m 0755 "$install_dir" "$(dirname -- "$bin_path")"
 stage_dir="$(mktemp -d "${install_dir}/.install.XXXXXX")"
