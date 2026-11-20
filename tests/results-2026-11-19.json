@@ -1,14 +1,778 @@
 {
-  "run": "https://github.com/bobvhfhh/singbox-lite-smallmem/actions/runs/44542653777",
-  "tested_commit": "ef8e488",
+  "tested_commit": "1ea068e",
   "singbox": "1.13.21",
   "xray": "26.11.9",
   "cpu_limit": 0.5,
   "swap": false,
+  "cpu_percent_basis": "100% = one logical CPU",
+  "runtime_run": "https://github.com/bobvhfhh/singbox-lite-smallmem/actions/runs/44551276623",
+  "fresh_run": "https://github.com/bobvhfhh/singbox-lite-smallmem/actions/runs/44551276640",
   "cases": [
-    {"memory_mib":128,"ipv4_only":false,"go_budget_mib":40,"singbox_idle_rss_mib":41.14,"xray_idle_rss_mib":32.88,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.187,"container_peak_mib":69.66,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
-    {"memory_mib":128,"ipv4_only":true,"go_budget_mib":40,"singbox_idle_rss_mib":42.06,"xray_idle_rss_mib":32.71,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.535,"container_peak_mib":68.01,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
-    {"memory_mib":256,"ipv4_only":false,"go_budget_mib":64,"singbox_idle_rss_mib":41.11,"xray_idle_rss_mib":32.59,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":7.991,"container_peak_mib":68.35,"oom":0,"oom_kill":0,"all_five_protocols_pass":true},
-    {"memory_mib":256,"ipv4_only":true,"go_budget_mib":64,"singbox_idle_rss_mib":41.1,"xray_idle_rss_mib":32.91,"idle_cpu_percent":0.0,"max_sampled_traffic_cpu_percent":8.19,"container_peak_mib":68.56,"oom":0,"oom_kill":0,"all_five_protocols_pass":true}
+    {
+      "memory_mib": 128,
+      "ipv4_only": false,
+      "resources": [
+        {
+          "name": "singbox-idle",
+          "seconds": 60.069,
+          "rss_mib": 43.2,
+          "peak_rss_mib": 43.2,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "xray-idle",
+          "seconds": 60.001,
+          "rss_mib": 32.91,
+          "peak_rss_mib": 32.91,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-anytls-traffic",
+          "seconds": 30.001,
+          "rss_mib": 45.14,
+          "peak_rss_mib": 45.14,
+          "cpu_percent": 0.267
+        },
+        {
+          "name": "singbox-tuic-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.05,
+          "peak_rss_mib": 47.05,
+          "cpu_percent": 0.533
+        },
+        {
+          "name": "singbox-vless-traffic",
+          "seconds": 30.001,
+          "rss_mib": 48.36,
+          "peak_rss_mib": 48.36,
+          "cpu_percent": 0.667
+        },
+        {
+          "name": "xray-reality-traffic",
+          "seconds": 30.001,
+          "rss_mib": 36.74,
+          "peak_rss_mib": 36.74,
+          "cpu_percent": 0.667
+        },
+        {
+          "name": "xray-xhttp-h2-traffic",
+          "seconds": 30.001,
+          "rss_mib": 37.83,
+          "peak_rss_mib": 37.83,
+          "cpu_percent": 0.6
+        }
+      ],
+      "traffic": [
+        {
+          "protocol": "singbox-anytls",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.267
+        },
+        {
+          "protocol": "singbox-tuic",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.533
+        },
+        {
+          "protocol": "singbox-vless",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.667
+        },
+        {
+          "protocol": "xray-reality",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.667
+        },
+        {
+          "protocol": "xray-xhttp-h2",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.6
+        }
+      ],
+      "creation": [
+        {
+          "phase": "create-_add_vless_reality",
+          "seconds": 2.365,
+          "container_cpu_seconds": 0.239,
+          "container_cpu_percent": 10.088
+        },
+        {
+          "phase": "create-_add_anytls",
+          "seconds": 2.575,
+          "container_cpu_seconds": 0.349,
+          "container_cpu_percent": 13.55
+        },
+        {
+          "phase": "create-_add_tuic",
+          "seconds": 2.715,
+          "container_cpu_seconds": 0.396,
+          "container_cpu_percent": 14.57
+        },
+        {
+          "phase": "create-xray-reality",
+          "seconds": 1.406,
+          "container_cpu_seconds": 0.212,
+          "container_cpu_percent": 15.101
+        },
+        {
+          "phase": "create-xray-xhttp",
+          "seconds": 1.471,
+          "container_cpu_seconds": 0.273,
+          "container_cpu_percent": 18.548
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      }
+    },
+    {
+      "memory_mib": 128,
+      "ipv4_only": true,
+      "resources": [
+        {
+          "name": "xray-idle",
+          "seconds": 60.001,
+          "rss_mib": 32.94,
+          "peak_rss_mib": 32.94,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-idle",
+          "seconds": 60.0,
+          "rss_mib": 42.94,
+          "peak_rss_mib": 42.94,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-anytls-traffic",
+          "seconds": 30.001,
+          "rss_mib": 45.27,
+          "peak_rss_mib": 45.27,
+          "cpu_percent": 0.367
+        },
+        {
+          "name": "singbox-tuic-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.34,
+          "peak_rss_mib": 47.34,
+          "cpu_percent": 0.633
+        },
+        {
+          "name": "singbox-vless-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.54,
+          "peak_rss_mib": 48.2,
+          "cpu_percent": 0.8
+        },
+        {
+          "name": "xray-reality-traffic",
+          "seconds": 30.001,
+          "rss_mib": 36.44,
+          "peak_rss_mib": 36.44,
+          "cpu_percent": 0.8
+        },
+        {
+          "name": "xray-xhttp-h2-traffic",
+          "seconds": 30.001,
+          "rss_mib": 37.83,
+          "peak_rss_mib": 37.83,
+          "cpu_percent": 0.633
+        }
+      ],
+      "traffic": [
+        {
+          "protocol": "singbox-anytls",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.367
+        },
+        {
+          "protocol": "singbox-tuic",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.633
+        },
+        {
+          "protocol": "singbox-vless",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.8
+        },
+        {
+          "protocol": "xray-reality",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.8
+        },
+        {
+          "protocol": "xray-xhttp-h2",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.633
+        }
+      ],
+      "creation": [
+        {
+          "phase": "create-_add_vless_reality",
+          "seconds": 2.461,
+          "container_cpu_seconds": 0.287,
+          "container_cpu_percent": 11.67
+        },
+        {
+          "phase": "create-_add_anytls",
+          "seconds": 2.648,
+          "container_cpu_seconds": 0.379,
+          "container_cpu_percent": 14.328
+        },
+        {
+          "phase": "create-_add_tuic",
+          "seconds": 2.749,
+          "container_cpu_seconds": 0.429,
+          "container_cpu_percent": 15.619
+        },
+        {
+          "phase": "create-xray-reality",
+          "seconds": 1.437,
+          "container_cpu_seconds": 0.267,
+          "container_cpu_percent": 18.552
+        },
+        {
+          "phase": "create-xray-xhttp",
+          "seconds": 1.752,
+          "container_cpu_seconds": 0.431,
+          "container_cpu_percent": 24.603
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      }
+    },
+    {
+      "memory_mib": 256,
+      "ipv4_only": false,
+      "resources": [
+        {
+          "name": "xray-idle",
+          "seconds": 60.001,
+          "rss_mib": 33.0,
+          "peak_rss_mib": 33.0,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-idle",
+          "seconds": 60.0,
+          "rss_mib": 43.06,
+          "peak_rss_mib": 43.06,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-anytls-traffic",
+          "seconds": 30.001,
+          "rss_mib": 44.93,
+          "peak_rss_mib": 44.93,
+          "cpu_percent": 0.3
+        },
+        {
+          "name": "singbox-tuic-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.29,
+          "peak_rss_mib": 47.29,
+          "cpu_percent": 0.533
+        },
+        {
+          "name": "singbox-vless-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.75,
+          "peak_rss_mib": 48.27,
+          "cpu_percent": 0.633
+        },
+        {
+          "name": "xray-reality-traffic",
+          "seconds": 30.001,
+          "rss_mib": 36.52,
+          "peak_rss_mib": 36.52,
+          "cpu_percent": 0.733
+        },
+        {
+          "name": "xray-xhttp-h2-traffic",
+          "seconds": 30.001,
+          "rss_mib": 37.69,
+          "peak_rss_mib": 37.69,
+          "cpu_percent": 0.533
+        }
+      ],
+      "traffic": [
+        {
+          "protocol": "singbox-anytls",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.3
+        },
+        {
+          "protocol": "singbox-tuic",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.533
+        },
+        {
+          "protocol": "singbox-vless",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.633
+        },
+        {
+          "protocol": "xray-reality",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.733
+        },
+        {
+          "protocol": "xray-xhttp-h2",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.533
+        }
+      ],
+      "creation": [
+        {
+          "phase": "create-_add_vless_reality",
+          "seconds": 2.449,
+          "container_cpu_seconds": 0.274,
+          "container_cpu_percent": 11.191
+        },
+        {
+          "phase": "create-_add_anytls",
+          "seconds": 2.649,
+          "container_cpu_seconds": 0.378,
+          "container_cpu_percent": 14.27
+        },
+        {
+          "phase": "create-_add_tuic",
+          "seconds": 2.675,
+          "container_cpu_seconds": 0.4,
+          "container_cpu_percent": 14.94
+        },
+        {
+          "phase": "create-xray-reality",
+          "seconds": 1.35,
+          "container_cpu_seconds": 0.229,
+          "container_cpu_percent": 16.952
+        },
+        {
+          "phase": "create-xray-xhttp",
+          "seconds": 1.555,
+          "container_cpu_seconds": 0.314,
+          "container_cpu_percent": 20.171
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      }
+    },
+    {
+      "memory_mib": 256,
+      "ipv4_only": true,
+      "resources": [
+        {
+          "name": "xray-idle",
+          "seconds": 60.001,
+          "rss_mib": 32.81,
+          "peak_rss_mib": 32.81,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-idle",
+          "seconds": 60.001,
+          "rss_mib": 42.94,
+          "peak_rss_mib": 42.94,
+          "cpu_percent": 0.0
+        },
+        {
+          "name": "singbox-anytls-traffic",
+          "seconds": 30.001,
+          "rss_mib": 44.93,
+          "peak_rss_mib": 44.93,
+          "cpu_percent": 0.367
+        },
+        {
+          "name": "singbox-tuic-traffic",
+          "seconds": 30.001,
+          "rss_mib": 46.82,
+          "peak_rss_mib": 46.82,
+          "cpu_percent": 0.767
+        },
+        {
+          "name": "singbox-vless-traffic",
+          "seconds": 30.001,
+          "rss_mib": 47.95,
+          "peak_rss_mib": 48.01,
+          "cpu_percent": 0.9
+        },
+        {
+          "name": "xray-reality-traffic",
+          "seconds": 30.001,
+          "rss_mib": 36.29,
+          "peak_rss_mib": 36.29,
+          "cpu_percent": 0.867
+        },
+        {
+          "name": "xray-xhttp-h2-traffic",
+          "seconds": 30.001,
+          "rss_mib": 37.46,
+          "peak_rss_mib": 37.46,
+          "cpu_percent": 0.767
+        }
+      ],
+      "traffic": [
+        {
+          "protocol": "singbox-anytls",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.367
+        },
+        {
+          "protocol": "singbox-tuic",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.767
+        },
+        {
+          "protocol": "singbox-vless",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.9
+        },
+        {
+          "protocol": "xray-reality",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.867
+        },
+        {
+          "protocol": "xray-xhttp-h2",
+          "requests": 120,
+          "bytes": 31457280,
+          "seconds": 30.0,
+          "target_mib_s": 1,
+          "actual_mib_s": 1.0,
+          "server_cpu_percent": 0.767
+        }
+      ],
+      "creation": [
+        {
+          "phase": "create-_add_vless_reality",
+          "seconds": 2.468,
+          "container_cpu_seconds": 0.3,
+          "container_cpu_percent": 12.138
+        },
+        {
+          "phase": "create-_add_anytls",
+          "seconds": 2.97,
+          "container_cpu_seconds": 0.558,
+          "container_cpu_percent": 18.79
+        },
+        {
+          "phase": "create-_add_tuic",
+          "seconds": 3.037,
+          "container_cpu_seconds": 0.545,
+          "container_cpu_percent": 17.937
+        },
+        {
+          "phase": "create-xray-reality",
+          "seconds": 1.44,
+          "container_cpu_seconds": 0.273,
+          "container_cpu_percent": 18.94
+        },
+        {
+          "phase": "create-xray-xhttp",
+          "seconds": 2.028,
+          "container_cpu_seconds": 0.564,
+          "container_cpu_percent": 27.808
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      }
+    }
+  ],
+  "fresh_installation": [
+    {
+      "artifact": "fresh-0-singbox",
+      "container_peak_mib": 128.0,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 18,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "phases": [
+        {
+          "phase": "installer-and-first-menu",
+          "seconds": 12.998,
+          "container_cpu_seconds": 6.407,
+          "container_cpu_percent": 49.29
+        },
+        {
+          "phase": "install-singbox-core",
+          "seconds": 8.596,
+          "container_cpu_seconds": 1.973,
+          "container_cpu_percent": 22.956
+        },
+        {
+          "phase": "create-singbox-1",
+          "seconds": 3.046,
+          "container_cpu_seconds": 0.626,
+          "container_cpu_percent": 20.542
+        },
+        {
+          "phase": "create-singbox-2",
+          "seconds": 3.345,
+          "container_cpu_seconds": 0.769,
+          "container_cpu_percent": 22.997
+        },
+        {
+          "phase": "create-singbox-3",
+          "seconds": 3.344,
+          "container_cpu_seconds": 0.758,
+          "container_cpu_percent": 22.663
+        },
+        {
+          "phase": "repeat-menu-launch-and-exit",
+          "seconds": 0.57,
+          "container_cpu_seconds": 0.291,
+          "container_cpu_percent": 51.021
+        }
+      ]
+    },
+    {
+      "artifact": "fresh-1-xray",
+      "container_peak_mib": 105.15,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "phases": [
+        {
+          "phase": "installer-and-first-menu",
+          "seconds": 11.455,
+          "container_cpu_seconds": 5.505,
+          "container_cpu_percent": 48.06
+        },
+        {
+          "phase": "install-xray-core",
+          "seconds": 3.903,
+          "container_cpu_seconds": 0.823,
+          "container_cpu_percent": 21.09
+        },
+        {
+          "phase": "create-xray-1",
+          "seconds": 1.484,
+          "container_cpu_seconds": 0.268,
+          "container_cpu_percent": 18.089
+        },
+        {
+          "phase": "create-xray-2",
+          "seconds": 1.87,
+          "container_cpu_seconds": 0.486,
+          "container_cpu_percent": 25.983
+        },
+        {
+          "phase": "repeat-menu-launch-and-exit",
+          "seconds": 0.183,
+          "container_cpu_seconds": 0.093,
+          "container_cpu_percent": 50.999
+        }
+      ]
+    },
+    {
+      "artifact": "fresh-2-singbox",
+      "container_peak_mib": 128.0,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 77,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "phases": [
+        {
+          "phase": "installer-and-first-menu",
+          "seconds": 2.366,
+          "container_cpu_seconds": 1.173,
+          "container_cpu_percent": 49.56
+        },
+        {
+          "phase": "install-singbox-core",
+          "seconds": 10.854,
+          "container_cpu_seconds": 2.922,
+          "container_cpu_percent": 26.921
+        },
+        {
+          "phase": "create-singbox-1",
+          "seconds": 3.033,
+          "container_cpu_seconds": 0.62,
+          "container_cpu_percent": 20.455
+        },
+        {
+          "phase": "create-singbox-2",
+          "seconds": 3.039,
+          "container_cpu_seconds": 0.594,
+          "container_cpu_percent": 19.558
+        },
+        {
+          "phase": "create-singbox-3",
+          "seconds": 3.053,
+          "container_cpu_seconds": 0.627,
+          "container_cpu_percent": 20.549
+        },
+        {
+          "phase": "repeat-menu-launch-and-exit",
+          "seconds": 0.68,
+          "container_cpu_seconds": 0.336,
+          "container_cpu_percent": 49.411
+        }
+      ]
+    },
+    {
+      "artifact": "fresh-3-xray",
+      "container_peak_mib": 97.29,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "phases": [
+        {
+          "phase": "installer-and-first-menu",
+          "seconds": 2.337,
+          "container_cpu_seconds": 1.16,
+          "container_cpu_percent": 49.641
+        },
+        {
+          "phase": "install-xray-core",
+          "seconds": 3.949,
+          "container_cpu_seconds": 1.041,
+          "container_cpu_percent": 26.373
+        },
+        {
+          "phase": "create-xray-1",
+          "seconds": 1.597,
+          "container_cpu_seconds": 0.369,
+          "container_cpu_percent": 23.099
+        },
+        {
+          "phase": "create-xray-2",
+          "seconds": 1.545,
+          "container_cpu_seconds": 0.343,
+          "container_cpu_percent": 22.164
+        },
+        {
+          "phase": "repeat-menu-launch-and-exit",
+          "seconds": 0.27,
+          "container_cpu_seconds": 0.133,
+          "container_cpu_percent": 49.374
+        }
+      ]
+    }
   ]
 }

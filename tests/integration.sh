@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -Eo pipefail
+setup_only=0
+[[ "${1:-}" == --setup-only ]] && setup_only=1
 cd /work || exit 1
 fail() { echo "FAIL: $*" >&2; exit 1; }
 must() { "$@" || fail "$*"; }
@@ -149,7 +151,7 @@ for operation in _add_vless_reality _add_anytls _add_tuic; do
     done
 done
 echo 'PASS: all sing-box creation input boundaries exit on EOF without spinning'
-[[ "${1:-}" == --setup-only ]] && exit 0
+[[ "$setup_only" == 1 ]] && exit 0
 
 # 两个核心同时运行，分别统计空闲 CPU 和 RSS。
 python3 tests/resource-sample.py "$(cat "$PID_FILE")" 60 singbox-idle 1 &
